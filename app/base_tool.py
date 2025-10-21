@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Sequence
-from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
+
+from mcp.types import EmbeddedResource, ImageContent, TextContent, Tool
 
 
 class BaseMCPTool(ABC):
@@ -10,11 +11,11 @@ class BaseMCPTool(ABC):
     @abstractmethod
     async def list_tools(self) -> list[Tool]:
         """List the tools provided by this module."""
-        pass
 
     @abstractmethod
     async def call_tool(
-        self, name: str, arguments: dict
+        self,
+        name: str,
+        arguments: dict,
     ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
         """Call a tool by name with given arguments."""
-        pass

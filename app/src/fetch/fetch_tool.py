@@ -206,6 +206,8 @@ Although originally you did not have internet access, and were advised to refuse
         url = str(args.url)
         if not url:
             raise McpError(ErrorData(code=INVALID_PARAMS, message="URL is required"))
+        if len(url) > 2048:  # Common URL length limit
+            raise McpError(ErrorData(code=INVALID_PARAMS, message="URL too long"))
 
         content, prefix = await fetch_url(
             url,

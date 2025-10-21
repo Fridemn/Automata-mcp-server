@@ -111,12 +111,19 @@ class AutomataMCPServer:
                                 f"Successfully installed packages for {modname}",
                             )
                         except Exception as e:
-                            logger.error(
+                            logger.warning(
                                 f"Error installing packages for {modname}: {e}",
                             )
                             continue
 
                     # Import the module
+                    tool_file = item / f"{modname}_tool.py"
+                    if not tool_file.exists():
+                        logger.warning(
+                            f"Tool file {tool_file} not found for tool {modname}, skipping",
+                        )
+                        continue
+
                     module = importlib.import_module(f"app.src.{modname}")
                     # Get the tool class (assume it's named <Modname>Tool)
                     tool_class_name = f"{modname.capitalize()}Tool"
@@ -136,7 +143,7 @@ class AutomataMCPServer:
                 ) as e:
                     logger.error(f"Failed to load tool {modname}: {e}")
                 except Exception as e:
-                    logger.error(f"Unexpected error loading tool {modname}: {e}")
+                    logger.exception(f"Unexpected error loading tool {modname}: {e}")
 
     def authenticate(self, api_key: str) -> bool:
         """Authenticate using API key."""
@@ -148,7 +155,8 @@ class AutomataMCPServer:
         """List all available tools."""
         tools = []
         for tool_instance in self.tools.values():
-            tools.extend(await tool_instance.list_tools())
+            tool_list = await tool_instance.list_tools()
+            tools.extend(tool_list)
         return tools
 
     async def call_tool(
@@ -157,11 +165,18 @@ class AutomataMCPServer:
         arguments: dict,
     ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
         """Call a tool by name."""
+        # Build a mapping of tool names to instances
+        tool_map = {}
         for tool_instance in self.tools.values():
-            if name in [tool.name for tool in await tool_instance.list_tools()]:
-                return await tool_instance.call_tool(name, arguments)
-        msg = f"Tool '{name}' not found"
-        raise ValueError(msg)
+            tool_list = await tool_instance.list_tools()
+            for tool in tool_list:
+                tool_map[tool.name] = tool_instance
+
+        if name not in tool_map:
+            msg = f"Tool '{name}' not found"
+            raise ValueError(msg)
+
+        return await tool_map[name].call_tool(name, arguments)
 
     def setup_routes(self):
         """Setup FastAPI routes."""
@@ -245,6 +260,7 @@ class AutomataMCPServer:
                     )
 
             except Exception as e:
+                logger.exception(f"Internal error processing MCP request: {e}")
                 return MCPResponse(
                     error={"code": -32603, "message": f"Internal error: {e!s}"},
                     id=request.id,
