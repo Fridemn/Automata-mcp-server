@@ -124,7 +124,14 @@ class AutomataMCPServer:
                         )
                         continue
 
-                    module = importlib.import_module(f"app.src.{modname}")
+                    # Import the module - calculate relative path from app package
+                    app_dir = Path(__file__).parent
+                    relative_path = self.tools_dir.relative_to(app_dir)
+                    module_path = f"app.{relative_path}.{modname}".replace(
+                        "/",
+                        ".",
+                    ).replace("\\", ".")
+                    module = importlib.import_module(module_path)
                     # Get the tool class (assume it's named <Modname>Tool)
                     tool_class_name = f"{modname.capitalize()}Tool"
                     tool_class = getattr(module, tool_class_name)

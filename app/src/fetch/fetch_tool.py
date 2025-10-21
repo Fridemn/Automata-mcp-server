@@ -1,3 +1,4 @@
+import asyncio
 from typing import Sequence, Tuple
 from urllib.parse import urlparse, urlunparse
 
@@ -23,7 +24,7 @@ DEFAULT_USER_AGENT_AUTONOMOUS = "ModelContextProtocol/1.0 (Autonomous; +https://
 DEFAULT_USER_AGENT_MANUAL = "ModelContextProtocol/1.0 (User-Specified; +https://github.com/modelcontextprotocol/servers)"
 
 
-def extract_content_from_html(html: str) -> str:
+async def extract_content_from_html(html: str) -> str:
     """Extract and convert HTML content to Markdown format.
 
     Args:
@@ -32,6 +33,12 @@ def extract_content_from_html(html: str) -> str:
     Returns:
         Simplified markdown version of the content
     """
+    # Run CPU-intensive operation in thread pool to avoid blocking event loop
+    return await asyncio.to_thread(_extract_content_from_html_sync, html)
+
+
+def _extract_content_from_html_sync(html: str) -> str:
+    """Synchronous version of HTML content extraction."""
     ret = readabilipy.simple_json.simple_json_from_html_string(
         html,
         use_readability=True,
@@ -68,7 +75,9 @@ async def check_may_autonomously_fetch_url(url: str, user_agent: str) -> None:
 
     robot_txt_url = get_robots_txt_url(url)
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(
+        limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+    ) as client:
         try:
             response = await client.get(
                 robot_txt_url,
@@ -119,7 +128,9 @@ async def fetch_url(
     Fetch the URL and return the content in a form ready for the LLM, as well as a prefix string with status information.
     """
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(
+        limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+    ) as client:
         try:
             response = await client.get(
                 url,
@@ -147,7 +158,7 @@ async def fetch_url(
     )
 
     if is_page_html and not force_raw:
-        return extract_content_from_html(page_raw), ""
+        return await extract_content_from_html(page_raw), ""
 
     return (
         page_raw,
