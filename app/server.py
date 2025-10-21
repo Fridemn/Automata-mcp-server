@@ -8,11 +8,13 @@ import uvicorn
 import yaml
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi_mcp import FastApiMCP
 from loguru import logger
 from mcp.types import EmbeddedResource, ImageContent, TextContent, Tool
 from pydantic import BaseModel
 
 from .base_tool import BaseMCPTool
+from .src.fetch.fetch_tool import FetchParams
 
 
 class MCPRequest(BaseModel):
@@ -52,6 +54,9 @@ class AutomataMCPServer:
             self.tools_dir = Path(__file__).parent / tools_dir_env
         self.discover_tools()
         self.setup_routes()
+        # Initialize FastApiMCP
+        self.mcp = FastApiMCP(self.app)
+        self.mcp.mount_http()
 
     def discover_tools(self):
         """Automatically discover tools in the configured tools directory."""
@@ -139,6 +144,8 @@ class AutomataMCPServer:
                     tool_instance = tool_class()
                     # Register the tool
                     self.tools[modname] = tool_instance
+                    # Register routes for the tool
+                    self.register_tool_routes(tool_instance, modname)
                     logger.info(
                         f"Tool {modname} discovered and registered successfully",
                     )
@@ -152,38 +159,39 @@ class AutomataMCPServer:
                 except Exception as e:
                     logger.exception(f"Unexpected error loading tool {modname}: {e}")
 
+    def register_tool_routes(self, tool_instance: BaseMCPTool, modname: str):
+        """Register FastAPI routes for the tool."""
+        # Hardcode for fetch tool
+        if modname == "fetch":
+
+            async def verify_api_key(
+                x_api_key: str | None = Header(None, alias="X-API-Key"),
+            ):
+                """Dependency to verify API key."""
+                if not self.authenticate(x_api_key or ""):
+                    raise HTTPException(status_code=401, detail="Invalid API key")
+                return x_api_key
+
+            @self.app.post("/tools/fetch")
+            async def fetch_endpoint(
+                params: FetchParams,
+                _api_key: str = Depends(verify_api_key),
+            ):
+                result = await tool_instance.call_tool("fetch", params.model_dump())
+                # Convert to dict for JSON response
+                return {
+                    "content": [
+                        {"type": item.type, "text": item.text}
+                        for item in result
+                        if hasattr(item, "type") and hasattr(item, "text")
+                    ],
+                }
+
     def authenticate(self, api_key: str) -> bool:
         """Authenticate using API key."""
         if not self.api_key:
             return True  # No API key required if not set
         return api_key == self.api_key
-
-    async def list_tools(self) -> list[Tool]:
-        """List all available tools."""
-        tools = []
-        for tool_instance in self.tools.values():
-            tool_list = await tool_instance.list_tools()
-            tools.extend(tool_list)
-        return tools
-
-    async def call_tool(
-        self,
-        name: str,
-        arguments: dict,
-    ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
-        """Call a tool by name."""
-        # Build a mapping of tool names to instances
-        tool_map = {}
-        for tool_instance in self.tools.values():
-            tool_list = await tool_instance.list_tools()
-            for tool in tool_list:
-                tool_map[tool.name] = tool_instance
-
-        if name not in tool_map:
-            msg = f"Tool '{name}' not found"
-            raise ValueError(msg)
-
-        return await tool_map[name].call_tool(name, arguments)
 
     def setup_routes(self):
         """Setup FastAPI routes."""
@@ -210,79 +218,20 @@ class AutomataMCPServer:
             """Health check endpoint."""
             return {"status": "healthy"}
 
-        @self.app.post("/mcp")
-        async def handle_mcp_request(
-            request: MCPRequest,
-            _api_key: str = Depends(verify_api_key),
-        ):
-            """Handle MCP requests over HTTP."""
-            try:
-                if request.method == "tools/list":
-                    tools = await self.list_tools()
-                    result = {
-                        "tools": [
-                            {
-                                "name": tool.name,
-                                "description": tool.description,
-                                "inputSchema": tool.inputSchema,
-                            }
-                            for tool in tools
-                        ],
-                    }
-                    return MCPResponse(result=result, id=request.id)
-
-                if request.method == "tools/call":
-                    if not request.params or "name" not in request.params:
-                        return MCPResponse(
-                            error={"code": -32602, "message": "Invalid params"},
-                            id=request.id,
-                        )
-
-                    name = request.params["name"]
-                    arguments = request.params.get("arguments", {})
-
-                    try:
-                        content = await self.call_tool(name, arguments)
-                        result = {
-                            "content": [
-                                {"type": item.type, "text": item.text}
-                                for item in content
-                                if isinstance(item, TextContent)
-                            ],
-                        }
-                        return MCPResponse(result=result, id=request.id)
-                    except Exception as e:
-                        return MCPResponse(
-                            error={"code": -32603, "message": str(e)},
-                            id=request.id,
-                        )
-
-                else:
-                    return MCPResponse(
-                        error={
-                            "code": -32601,
-                            "message": f"Method '{request.method}' not found",
-                        },
-                        id=request.id,
-                    )
-
-            except Exception as e:
-                logger.exception(f"Internal error processing MCP request: {e}")
-                return MCPResponse(
-                    error={"code": -32603, "message": f"Internal error: {e!s}"},
-                    id=request.id,
-                )
-
         @self.app.get("/tools")
         async def list_registered_tools(_api_key: str = Depends(verify_api_key)):
             """List all registered tools (for debugging)."""
-            tools = await self.list_tools()
-            return {
-                "tools": [
-                    {"name": tool.name, "description": tool.description}
-                    for tool in tools
-                ],
-            }
+            tools_info = []
+            for modname in self.tools:
+                # For now, manually list
+                if modname == "fetch":
+                    tools_info.append(
+                        {
+                            "name": "fetch",
+                            "description": "Fetches a URL from the internet",
+                        },
+                    )
+            return {"tools": tools_info}
 
 
 def create_app() -> FastAPI:
