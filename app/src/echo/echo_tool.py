@@ -21,7 +21,9 @@ class EchoTool(BaseMCPTool):
             )
         ]
 
-    async def call_tool(self, name: str, arguments: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+    async def call_tool(
+        self, name: str, arguments: dict
+    ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
         if name != "echo":
             raise ValueError(f"Unknown tool: {name}")
 

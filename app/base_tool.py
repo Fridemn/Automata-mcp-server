@@ -13,6 +13,8 @@ class BaseMCPTool(ABC):
         pass
 
     @abstractmethod
-    async def call_tool(self, name: str, arguments: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+    async def call_tool(
+        self, name: str, arguments: dict
+    ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
         """Call a tool by name with given arguments."""
         pass

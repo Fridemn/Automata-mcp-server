@@ -7,7 +7,12 @@ from pydantic import BaseModel, Field, AnyUrl
 
 class FetchParams(BaseModel):
     url: AnyUrl = Field(description="URL to fetch")
-    max_length: int = Field(default=5000, description="Maximum number of characters to return", gt=0, lt=1000000)
+    max_length: int = Field(
+        default=5000,
+        description="Maximum number of characters to return",
+        gt=0,
+        lt=1000000,
+    )
 
 
 class FetchTool(BaseMCPTool):
@@ -23,7 +28,9 @@ class FetchTool(BaseMCPTool):
             )
         ]
 
-    async def call_tool(self, name: str, arguments: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+    async def call_tool(
+        self, name: str, arguments: dict
+    ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
         if name != "fetch":
             raise ValueError(f"Unknown tool: {name}")
 
@@ -37,7 +44,7 @@ class FetchTool(BaseMCPTool):
 
             # Truncate if necessary
             if len(content) > params.max_length:
-                content = content[:params.max_length] + "\n\n[Content truncated]"
+                content = content[: params.max_length] + "\n\n[Content truncated]"
 
             return [TextContent(type="text", text=f"Contents of {url}:\n{content}")]
         except requests.RequestException as e:
