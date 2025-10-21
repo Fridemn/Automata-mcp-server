@@ -1,29 +1,30 @@
 import importlib
 import os
-import pkgutil
-import yaml
 from pathlib import Path
-from typing import Sequence, Optional
-from fastapi import FastAPI, HTTPException, Depends, Header
-from pydantic import BaseModel
-from dotenv import load_dotenv
+from typing import Optional, Sequence
 
-from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
+import uvicorn
+import yaml
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, Header, HTTPException
+from loguru import logger
+from mcp.types import EmbeddedResource, ImageContent, TextContent, Tool
+from pydantic import BaseModel
 
 from .base_tool import BaseMCPTool
 
 
 class MCPRequest(BaseModel):
     method: str
-    params: Optional[dict] = None
-    id: Optional[str] = None
+    params: dict | None = None
+    id: str | None = None
 
 
 class MCPResponse(BaseModel):
     jsonrpc: str = "2.0"
-    result: Optional[dict] = None
-    error: Optional[dict] = None
-    id: Optional[str] = None
+    result: dict | None = None
+    error: dict | None = None
+    id: str | None = None
 
 
 class AutomataMCPServer:
@@ -54,11 +55,15 @@ class AutomataMCPServer:
     def discover_tools(self):
         """Automatically discover tools in the configured tools directory."""
         if not self.tools_dir.exists():
-            print(f"Tools directory {self.tools_dir} does not exist, skipping tool discovery")
+            logger.warning(
+                f"Tools directory {self.tools_dir} does not exist, skipping tool discovery",
+            )
             return
 
         if not self.tools_dir.is_dir():
-            print(f"Tools directory {self.tools_dir} is not a directory, skipping tool discovery")
+            logger.warning(
+                f"Tools directory {self.tools_dir} is not a directory, skipping tool discovery",
+            )
             return
 
         # Iterate through Python packages in tools directory
@@ -67,17 +72,19 @@ class AutomataMCPServer:
                 modname = item.name
                 config_path = item / "config.yaml"
                 if not config_path.exists():
-                    print(f"Config file not found for tool {modname} at {config_path}, skipping")
+                    logger.warning(
+                        f"Config file not found for tool {modname} at {config_path}, skipping",
+                    )
                     continue
-                
+
                 try:
-                    with open(config_path, 'r', encoding='utf-8') as f:
+                    with open(config_path, encoding="utf-8") as f:
                         config = yaml.safe_load(f)
-                    
-                    if not config.get('enabled', False):
-                        print(f"Tool {modname} is disabled, skipping")
+
+                    if not config.get("enabled", False):
+                        logger.info(f"Tool {modname} is disabled, skipping")
                         continue
-                    
+
                     # Import the module
                     module = importlib.import_module(f"app.src.{modname}")
                     # Get the tool class (assume it's named <Modname>Tool)
@@ -87,11 +94,18 @@ class AutomataMCPServer:
                     tool_instance = tool_class()
                     # Register the tool
                     self.tools[modname] = tool_instance
-                    print(f"Tool {modname} discovered and registered successfully")
-                except (ImportError, AttributeError, yaml.YAMLError, FileNotFoundError) as e:
-                    print(f"Failed to load tool {modname}: {e}")
+                    logger.info(
+                        f"Tool {modname} discovered and registered successfully",
+                    )
+                except (
+                    ImportError,
+                    AttributeError,
+                    yaml.YAMLError,
+                    FileNotFoundError,
+                ) as e:
+                    logger.error(f"Failed to load tool {modname}: {e}")
                 except Exception as e:
-                    print(f"Unexpected error loading tool {modname}: {e}")
+                    logger.error(f"Unexpected error loading tool {modname}: {e}")
 
     def authenticate(self, api_key: str) -> bool:
         """Authenticate using API key."""
@@ -102,24 +116,27 @@ class AutomataMCPServer:
     async def list_tools(self) -> list[Tool]:
         """List all available tools."""
         tools = []
-        for tool_name, tool_instance in self.tools.items():
+        for tool_instance in self.tools.values():
             tools.extend(await tool_instance.list_tools())
         return tools
 
     async def call_tool(
-        self, name: str, arguments: dict
+        self,
+        name: str,
+        arguments: dict,
     ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
         """Call a tool by name."""
         for tool_instance in self.tools.values():
             if name in [tool.name for tool in await tool_instance.list_tools()]:
                 return await tool_instance.call_tool(name, arguments)
-        raise ValueError(f"Tool '{name}' not found")
+        msg = f"Tool '{name}' not found"
+        raise ValueError(msg)
 
     def setup_routes(self):
         """Setup FastAPI routes."""
 
         async def verify_api_key(
-            x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+            x_api_key: str | None = Header(None, alias="X-API-Key"),
         ):
             """Dependency to verify API key."""
             if not self.authenticate(x_api_key or ""):
@@ -142,7 +159,8 @@ class AutomataMCPServer:
 
         @self.app.post("/mcp")
         async def handle_mcp_request(
-            request: MCPRequest, api_key: str = Depends(verify_api_key)
+            request: MCPRequest,
+            _api_key: str = Depends(verify_api_key),
         ):
             """Handle MCP requests over HTTP."""
             try:
@@ -156,11 +174,11 @@ class AutomataMCPServer:
                                 "inputSchema": tool.inputSchema,
                             }
                             for tool in tools
-                        ]
+                        ],
                     }
                     return MCPResponse(result=result, id=request.id)
 
-                elif request.method == "tools/call":
+                if request.method == "tools/call":
                     if not request.params or "name" not in request.params:
                         return MCPResponse(
                             error={"code": -32602, "message": "Invalid params"},
@@ -177,12 +195,13 @@ class AutomataMCPServer:
                                 {"type": item.type, "text": item.text}
                                 for item in content
                                 if isinstance(item, TextContent)
-                            ]
+                            ],
                         }
                         return MCPResponse(result=result, id=request.id)
                     except Exception as e:
                         return MCPResponse(
-                            error={"code": -32603, "message": str(e)}, id=request.id
+                            error={"code": -32603, "message": str(e)},
+                            id=request.id,
                         )
 
                 else:
@@ -196,19 +215,19 @@ class AutomataMCPServer:
 
             except Exception as e:
                 return MCPResponse(
-                    error={"code": -32603, "message": f"Internal error: {str(e)}"},
+                    error={"code": -32603, "message": f"Internal error: {e!s}"},
                     id=request.id,
                 )
 
         @self.app.get("/tools")
-        async def list_registered_tools(api_key: str = Depends(verify_api_key)):
+        async def list_registered_tools(_api_key: str = Depends(verify_api_key)):
             """List all registered tools (for debugging)."""
             tools = await self.list_tools()
             return {
                 "tools": [
                     {"name": tool.name, "description": tool.description}
                     for tool in tools
-                ]
+                ],
             }
 
 
@@ -220,7 +239,6 @@ def create_app() -> FastAPI:
 
 def main():
     """Main entry point for the Automata MCP Server."""
-    import uvicorn
 
     app = create_app()
     uvicorn.run(app, host="0.0.0.0", port=8000)
