@@ -2,6 +2,7 @@ import importlib
 import os
 import pkgutil
 import yaml
+from pathlib import Path
 from typing import Sequence, Optional
 from fastapi import FastAPI, HTTPException, Depends, Header
 from pydantic import BaseModel
@@ -39,23 +40,38 @@ class AutomataMCPServer:
         self.api_key = os.getenv("AUTOMATA_API_KEY")  # 从环境变量获取API key
         self.host = os.getenv("HOST", "0.0.0.0")
         self.port = int(os.getenv("PORT", "8000"))
+        # 配置工具目录路径，支持绝对路径和相对路径
+        tools_dir_env = os.getenv("TOOLS_DIR", "src")
+        if not tools_dir_env:  # 如果环境变量为空，使用默认值
+            tools_dir_env = "src"
+        if Path(tools_dir_env).is_absolute():
+            self.tools_dir = Path(tools_dir_env)
+        else:
+            self.tools_dir = Path(__file__).parent / tools_dir_env
         self.discover_tools()
         self.setup_routes()
 
     def discover_tools(self):
-        """Automatically discover tools in the src directory."""
-        tools_dir = os.path.join(os.path.dirname(__file__), "src")
+        """Automatically discover tools in the configured tools directory."""
+        if not self.tools_dir.exists():
+            print(f"Tools directory {self.tools_dir} does not exist, skipping tool discovery")
+            return
 
-        # Iterate through Python packages in src directory
-        for importer, modname, ispkg in pkgutil.iter_modules([tools_dir]):
-            if ispkg:  # Only import packages, not files
-                config_path = os.path.join(tools_dir, modname, "config.yaml")
-                if not os.path.exists(config_path):
-                    print(f"Config file not found for tool {modname}, skipping")
+        if not self.tools_dir.is_dir():
+            print(f"Tools directory {self.tools_dir} is not a directory, skipping tool discovery")
+            return
+
+        # Iterate through Python packages in tools directory
+        for item in self.tools_dir.iterdir():
+            if item.is_dir() and (item / "__init__.py").exists():
+                modname = item.name
+                config_path = item / "config.yaml"
+                if not config_path.exists():
+                    print(f"Config file not found for tool {modname} at {config_path}, skipping")
                     continue
                 
                 try:
-                    with open(config_path, 'r') as f:
+                    with open(config_path, 'r', encoding='utf-8') as f:
                         config = yaml.safe_load(f)
                     
                     if not config.get('enabled', False):
@@ -72,8 +88,10 @@ class AutomataMCPServer:
                     # Register the tool
                     self.tools[modname] = tool_instance
                     print(f"Tool {modname} discovered and registered successfully")
-                except (ImportError, AttributeError, yaml.YAMLError) as e:
+                except (ImportError, AttributeError, yaml.YAMLError, FileNotFoundError) as e:
                     print(f"Failed to load tool {modname}: {e}")
+                except Exception as e:
+                    print(f"Unexpected error loading tool {modname}: {e}")
 
     def authenticate(self, api_key: str) -> bool:
         """Authenticate using API key."""
