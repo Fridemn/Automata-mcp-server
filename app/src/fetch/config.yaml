@@ -1,3 +1,7 @@
 enabled: true
 packages:
   - requests
+  - httpx
+  - markdownify
+  - readabilipy
+  - protego

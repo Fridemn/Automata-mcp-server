@@ -1,5 +1,6 @@
 import importlib
 import os
+import subprocess
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -84,6 +85,36 @@ class AutomataMCPServer:
                     if not config.get("enabled", False):
                         logger.info(f"Tool {modname} is disabled, skipping")
                         continue
+
+                    # Install required packages if specified
+                    packages = config.get("packages", [])
+                    if packages:
+                        logger.info(
+                            f"Installing packages for tool {modname}: {packages}",
+                        )
+                        try:
+                            # Use uv pip install to install packages
+                            cmd = ["uv", "pip", "install", *packages]
+                            result = subprocess.run(  # noqa: S603
+                                cmd,
+                                capture_output=True,
+                                text=True,
+                                cwd=self.tools_dir.parent.parent,
+                                check=False,
+                            )
+                            if result.returncode != 0:
+                                logger.error(
+                                    f"Failed to install packages for {modname}: {result.stderr}",
+                                )
+                                continue
+                            logger.info(
+                                f"Successfully installed packages for {modname}",
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Error installing packages for {modname}: {e}",
+                            )
+                            continue
 
                     # Import the module
                     module = importlib.import_module(f"app.src.{modname}")
