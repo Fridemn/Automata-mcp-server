@@ -39,11 +39,11 @@ class AutomataMCPServer:
         )
         self.tools = {}
         self.api_key = os.getenv("AUTOMATA_API_KEY")  # 从环境变量获取API key
-        self.host = os.getenv("HOST", "0.0.0.0")
-        self.port = int(os.getenv("PORT", "8000"))
+        self.host = os.getenv("HOST")
+        self.port = os.getenv("PORT")
         # 配置工具目录路径，支持绝对路径和相对路径
-        tools_dir_env = os.getenv("TOOLS_DIR", "src")
-        if not tools_dir_env:  # 如果环境变量为空，使用默认值
+        tools_dir_env = os.getenv("TOOLS_DIR")
+        if tools_dir_env is None:
             tools_dir_env = "src"
         if Path(tools_dir_env).is_absolute():
             self.tools_dir = Path(tools_dir_env)
@@ -240,8 +240,10 @@ def create_app() -> FastAPI:
 def main():
     """Main entry point for the Automata MCP Server."""
 
-    app = create_app()
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    server = AutomataMCPServer()
+    host = server.host
+    port = int(server.port)
+    uvicorn.run(server.app, host=host, port=port)
 
 
 if __name__ == "__main__":
