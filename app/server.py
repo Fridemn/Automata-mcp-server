@@ -1,6 +1,7 @@
 import importlib
 import os
 import pkgutil
+import yaml
 from typing import Sequence, Optional
 from fastapi import FastAPI, HTTPException, Depends, Header
 from pydantic import BaseModel
@@ -48,7 +49,19 @@ class AutomataMCPServer:
         # Iterate through Python packages in src directory
         for importer, modname, ispkg in pkgutil.iter_modules([tools_dir]):
             if ispkg:  # Only import packages, not files
+                config_path = os.path.join(tools_dir, modname, "config.yaml")
+                if not os.path.exists(config_path):
+                    print(f"Config file not found for tool {modname}, skipping")
+                    continue
+                
                 try:
+                    with open(config_path, 'r') as f:
+                        config = yaml.safe_load(f)
+                    
+                    if not config.get('enabled', False):
+                        print(f"Tool {modname} is disabled, skipping")
+                        continue
+                    
                     # Import the module
                     module = importlib.import_module(f"app.src.{modname}")
                     # Get the tool class (assume it's named <Modname>Tool)
@@ -59,7 +72,7 @@ class AutomataMCPServer:
                     # Register the tool
                     self.tools[modname] = tool_instance
                     print(f"Tool {modname} discovered and registered successfully")
-                except (ImportError, AttributeError) as e:
+                except (ImportError, AttributeError, yaml.YAMLError) as e:
                     print(f"Failed to load tool {modname}: {e}")
 
     def authenticate(self, api_key: str) -> bool:
