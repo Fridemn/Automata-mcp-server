@@ -1,6 +1,8 @@
 import importlib
 import os
 import subprocess
+import time
+import webbrowser
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -8,13 +10,14 @@ import uvicorn
 import yaml
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 from loguru import logger
 from mcp.types import EmbeddedResource, ImageContent, TextContent, Tool
 from pydantic import BaseModel
 
 from .base_tool import BaseMCPTool
-from .src.fetch.fetch_tool import FetchParams
+from .routers import create_router
 
 
 class MCPRequest(BaseModel):
@@ -52,11 +55,88 @@ class AutomataMCPServer:
             self.tools_dir = Path(tools_dir_env)
         else:
             self.tools_dir = Path(__file__).parent / tools_dir_env
+        self.install_dependencies_for_enabled_tools()
         self.discover_tools()
-        self.setup_routes()
         # Initialize FastApiMCP
         self.mcp = FastApiMCP(self.app)
         self.mcp.mount_http()
+
+        # Mount static files for dashboard
+        dashboard_path = Path(__file__).parent.parent / "data" / "dist"
+        self.app.mount("/dashboard", StaticFiles(directory=str(dashboard_path), html=True), name="dashboard")
+        # Also mount assets at root for index.html
+        self.app.mount("/assets", StaticFiles(directory=str(dashboard_path / "assets")), name="assets")
+        self.app.mount("/favicon.ico", StaticFiles(directory=str(dashboard_path)), name="favicon")
+
+        # Include routers
+        self.app.include_router(create_router(self.authenticate, lambda: len(self.tools)))
+
+    def install_dependencies_for_enabled_tools(self):
+        """Install dependencies for all enabled tools."""
+        if not self.tools_dir.exists():
+            logger.warning(
+                f"Tools directory {self.tools_dir} does not exist, skipping dependency installation",
+            )
+            return
+
+        if not self.tools_dir.is_dir():
+            logger.warning(
+                f"Tools directory {self.tools_dir} is not a directory, skipping dependency installation",
+            )
+            return
+
+        # Iterate through Python packages in tools directory
+        for item in self.tools_dir.iterdir():
+            if item.is_dir() and (item / "__init__.py").exists():
+                modname = item.name
+                config_path = item / "config.yaml"
+                if not config_path.exists():
+                    logger.warning(
+                        f"Config file not found for tool {modname} at {config_path}, skipping",
+                    )
+                    continue
+
+                try:
+                    with open(config_path, encoding="utf-8") as f:
+                        config = yaml.safe_load(f)
+                    enabled = config.get("enabled", False)
+                    if not enabled:
+                        logger.info(f"Tool {modname} is disabled, skipping dependency installation")
+                        continue
+
+                    packages = config.get("packages", [])
+                    if packages:
+                        logger.info(
+                            f"Installing packages for tool {modname}: {packages}",
+                        )
+                        try:
+                            # Use uv pip install to install packages
+                            cmd = ["uv", "pip", "install", *packages]
+                            result = subprocess.run(  # noqa: S603
+                                cmd,
+                                capture_output=True,
+                                text=True,
+                                cwd=self.tools_dir.parent.parent,
+                                check=False,
+                            )
+                            if result.returncode != 0:
+                                logger.error(
+                                    f"Failed to install packages for {modname}: {result.stderr}",
+                                )
+                                continue
+                            logger.info(
+                                f"Successfully installed packages for {modname}",
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"Error installing packages for {modname}: {e}",
+                            )
+                            continue
+                except (
+                    yaml.YAMLError,
+                    FileNotFoundError,
+                ) as e:
+                    logger.error(f"Failed to load config for tool {modname}: {e}")
 
     def discover_tools(self):
         """Automatically discover tools in the configured tools directory."""
@@ -90,36 +170,6 @@ class AutomataMCPServer:
                     if not config.get("enabled", False):
                         logger.info(f"Tool {modname} is disabled, skipping")
                         continue
-
-                    # Install required packages if specified
-                    packages = config.get("packages", [])
-                    if packages:
-                        logger.info(
-                            f"Installing packages for tool {modname}: {packages}",
-                        )
-                        try:
-                            # Use uv pip install to install packages
-                            cmd = ["uv", "pip", "install", *packages]
-                            result = subprocess.run(  # noqa: S603
-                                cmd,
-                                capture_output=True,
-                                text=True,
-                                cwd=self.tools_dir.parent.parent,
-                                check=False,
-                            )
-                            if result.returncode != 0:
-                                logger.error(
-                                    f"Failed to install packages for {modname}: {result.stderr}",
-                                )
-                                continue
-                            logger.info(
-                                f"Successfully installed packages for {modname}",
-                            )
-                        except Exception as e:
-                            logger.warning(
-                                f"Error installing packages for {modname}: {e}",
-                            )
-                            continue
 
                     # Import the module
                     tool_file = item / f"{modname}_tool.py"
@@ -163,6 +213,7 @@ class AutomataMCPServer:
         """Register FastAPI routes for the tool."""
         # Hardcode for fetch tool
         if modname == "fetch":
+            from .src.fetch.fetch_tool import FetchParams
 
             async def verify_api_key(
                 x_api_key: str | None = Header(None, alias="X-API-Key"),
@@ -193,46 +244,6 @@ class AutomataMCPServer:
             return True  # No API key required if not set
         return api_key == self.api_key
 
-    def setup_routes(self):
-        """Setup FastAPI routes."""
-
-        async def verify_api_key(
-            x_api_key: str | None = Header(None, alias="X-API-Key"),
-        ):
-            """Dependency to verify API key."""
-            if not self.authenticate(x_api_key or ""):
-                raise HTTPException(status_code=401, detail="Invalid API key")
-            return x_api_key
-
-        @self.app.get("/")
-        async def root():
-            """Root endpoint."""
-            return {
-                "message": "Automata MCP Server is running",
-                "version": "1.0.0",
-                "tools_count": len(self.tools),
-            }
-
-        @self.app.get("/health")
-        async def health():
-            """Health check endpoint."""
-            return {"status": "healthy"}
-
-        @self.app.get("/tools")
-        async def list_registered_tools(_api_key: str = Depends(verify_api_key)):
-            """List all registered tools (for debugging)."""
-            tools_info = []
-            for modname in self.tools:
-                # For now, manually list
-                if modname == "fetch":
-                    tools_info.append(
-                        {
-                            "name": "fetch",
-                            "description": "Fetches a URL from the internet",
-                        },
-                    )
-            return {"tools": tools_info}
-
 
 def create_app() -> FastAPI:
     """Create and return the FastAPI application."""
@@ -246,6 +257,16 @@ def main():
     server = AutomataMCPServer()
     host = server.host
     port = int(server.port)
+
+    # Open browser after server starts
+    def open_browser():
+        time.sleep(2)  # Wait for server to fully start
+        url = f"http://{host}:{port}/dashboard"
+        webbrowser.open(url)
+
+    import threading
+    threading.Thread(target=open_browser, daemon=True).start()
+
     uvicorn.run(server.app, host=host, port=port)
 
 
