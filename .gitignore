@@ -5,3 +5,4 @@ docs/
 .env
 uv.lock
 dashboard/.vscode/
+reference/
