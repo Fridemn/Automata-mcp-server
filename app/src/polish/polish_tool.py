@@ -26,6 +26,12 @@ class PolishTool(BaseMCPTool):
         super().__init__()
         self.llm_client = LLMClient()
 
+    def get_route_config(self) -> dict:
+        return {
+            "endpoint": "/tools/polish",
+            "params_class": PolishParams,
+        }
+
     async def list_tools(self) -> list[Tool]:
         return [
             Tool(

@@ -189,6 +189,12 @@ class FetchTool(BaseMCPTool):
     def __init__(self):
         super().__init__()
 
+    def get_route_config(self) -> dict:
+        return {
+            "endpoint": "/tools/fetch",
+            "params_class": FetchParams,
+        }
+
     async def list_tools(self) -> list[Tool]:
         return [
             Tool(

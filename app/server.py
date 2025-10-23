@@ -223,24 +223,28 @@ class AutomataMCPServer:
 
     def register_tool_routes(self, tool_instance: BaseMCPTool, modname: str):
         """Register FastAPI routes for the tool."""
-        # Hardcode for fetch tool
-        if modname == "fetch":
-            from .src.fetch.fetch_tool import FetchParams
 
-            async def verify_api_key(
-                x_api_key: str | None = Header(None, alias="X-API-Key"),
-            ):
-                """Dependency to verify API key."""
-                if not self.authenticate(x_api_key or ""):
-                    raise HTTPException(status_code=401, detail="Invalid API key")
-                return x_api_key
+        route_config = tool_instance.get_route_config()
+        endpoint = route_config["endpoint"]
+        params_class = route_config["params_class"]
 
-            @self.app.post("/tools/fetch")
-            async def fetch_endpoint(
-                params: FetchParams,
+        async def verify_api_key(
+            x_api_key: str | None = Header(None, alias="X-API-Key"),
+        ):
+            """Dependency to verify API key."""
+            if not self.authenticate(x_api_key or ""):
+                raise HTTPException(status_code=401, detail="Invalid API key")
+            return x_api_key
+
+        def create_tool_endpoint(p_class):
+            async def tool_endpoint(
+                params,  # type: ignore
                 _api_key: str = Depends(verify_api_key),
             ):
-                result = await tool_instance.call_tool("fetch", params.model_dump())
+                # params is already validated by FastAPI as the correct type
+                # Get the tool name from the route config or use modname
+                tool_name = route_config.get("tool_name", modname)
+                result = await tool_instance.call_tool(tool_name, params.model_dump())
                 # Convert to dict for JSON response
                 return {
                     "content": [
@@ -249,31 +253,15 @@ class AutomataMCPServer:
                         if hasattr(item, "type") and hasattr(item, "text")
                     ],
                 }
-        elif modname == "polish":
-            from .src.polish.polish_tool import PolishParams
 
-            async def verify_api_key(
-                x_api_key: str | None = Header(None, alias="X-API-Key"),
-            ):
-                """Dependency to verify API key."""
-                if not self.authenticate(x_api_key or ""):
-                    raise HTTPException(status_code=401, detail="Invalid API key")
-                return x_api_key
+            # Set the type annotation dynamically
+            tool_endpoint.__annotations__["params"] = p_class
+            return tool_endpoint
 
-            @self.app.post("/tools/polish")
-            async def polish_endpoint(
-                params: PolishParams,
-                _api_key: str = Depends(verify_api_key),
-            ):
-                result = await tool_instance.call_tool("polish", params.model_dump())
-                # Convert to dict for JSON response
-                return {
-                    "content": [
-                        {"type": item.type, "text": item.text}
-                        for item in result
-                        if hasattr(item, "type") and hasattr(item, "text")
-                    ],
-                }
+        tool_endpoint_func = create_tool_endpoint(params_class)
+
+        self.app.post(endpoint)(tool_endpoint_func)
+        logger.info(f"Registered route {endpoint} for tool {modname}")
 
     def authenticate(self, api_key: str) -> bool:
         """Authenticate using API key."""
