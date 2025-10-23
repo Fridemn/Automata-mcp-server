@@ -2,7 +2,7 @@
 name = "automata-mcp-server"
 version = "0.1.0"
 description = "Automata MCP Server"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<4.0"
 dependencies = [
     "fastapi==0.119.1",
     "uvicorn==0.38.0",
@@ -13,6 +13,8 @@ dependencies = [
     "pyyaml>=6.0.3",
     "loguru>=0.7.0",
     "fastapi-mcp",
+    "playwright (>=1.55.0,<2.0.0)",
+    "playwright-stealth (>=2.0.0,<3.0.0)",
 ]
 
 [tool.poetry]
