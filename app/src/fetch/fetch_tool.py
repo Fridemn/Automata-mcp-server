@@ -1,5 +1,5 @@
 import asyncio
-from typing import Sequence, Tuple
+from typing import Sequence
 from urllib.parse import urlparse, urlunparse
 
 import httpx

@@ -4,7 +4,6 @@ import subprocess
 import time
 import webbrowser
 from pathlib import Path
-from typing import Optional, Sequence
 
 import uvicorn
 import yaml
@@ -13,7 +12,6 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 from loguru import logger
-from mcp.types import EmbeddedResource, ImageContent, TextContent, Tool
 from pydantic import BaseModel
 
 from .base_tool import BaseMCPTool
@@ -63,13 +61,25 @@ class AutomataMCPServer:
 
         # Mount static files for dashboard
         dashboard_path = Path(__file__).parent.parent / "data" / "dist"
-        self.app.mount("/dashboard", StaticFiles(directory=str(dashboard_path), html=True), name="dashboard")
+        self.app.mount(
+            "/dashboard",
+            StaticFiles(directory=str(dashboard_path), html=True),
+            name="dashboard",
+        )
         # Also mount assets at root for index.html
-        self.app.mount("/assets", StaticFiles(directory=str(dashboard_path / "assets")), name="assets")
-        self.app.mount("/favicon.ico", StaticFiles(directory=str(dashboard_path)), name="favicon")
+        self.app.mount(
+            "/assets",
+            StaticFiles(directory=str(dashboard_path / "assets")),
+            name="assets",
+        )
+        self.app.mount(
+            "/favicon.ico", StaticFiles(directory=str(dashboard_path)), name="favicon"
+        )
 
         # Include routers
-        self.app.include_router(create_router(self.authenticate, lambda: len(self.tools)))
+        self.app.include_router(
+            create_router(self.authenticate, lambda: len(self.tools))
+        )
 
     def install_dependencies_for_enabled_tools(self):
         """Install dependencies for all enabled tools."""
@@ -101,7 +111,9 @@ class AutomataMCPServer:
                         config = yaml.safe_load(f)
                     enabled = config.get("enabled", False)
                     if not enabled:
-                        logger.info(f"Tool {modname} is disabled, skipping dependency installation")
+                        logger.info(
+                            f"Tool {modname} is disabled, skipping dependency installation"
+                        )
                         continue
 
                     packages = config.get("packages", [])
@@ -265,6 +277,7 @@ def main():
         webbrowser.open(url)
 
     import threading
+
     threading.Thread(target=open_browser, daemon=True).start()
 
     uvicorn.run(server.app, host=host, port=port)
