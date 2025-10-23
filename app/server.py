@@ -249,6 +249,31 @@ class AutomataMCPServer:
                         if hasattr(item, "type") and hasattr(item, "text")
                     ],
                 }
+        elif modname == "polish":
+            from .src.polish.polish_tool import PolishParams
+
+            async def verify_api_key(
+                x_api_key: str | None = Header(None, alias="X-API-Key"),
+            ):
+                """Dependency to verify API key."""
+                if not self.authenticate(x_api_key or ""):
+                    raise HTTPException(status_code=401, detail="Invalid API key")
+                return x_api_key
+
+            @self.app.post("/tools/polish")
+            async def polish_endpoint(
+                params: PolishParams,
+                _api_key: str = Depends(verify_api_key),
+            ):
+                result = await tool_instance.call_tool("polish", params.model_dump())
+                # Convert to dict for JSON response
+                return {
+                    "content": [
+                        {"type": item.type, "text": item.text}
+                        for item in result
+                        if hasattr(item, "type") and hasattr(item, "text")
+                    ],
+                }
 
     def authenticate(self, api_key: str) -> bool:
         """Authenticate using API key."""

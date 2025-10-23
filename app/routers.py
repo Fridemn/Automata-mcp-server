@@ -35,6 +35,12 @@ def create_router(authenticate_func, tools_count_func):
                 "description": "Fetches a URL from the internet",
             },
         )
+        tools_info.append(
+            {
+                "name": "polish",
+                "description": "Polishes text based on a prompt",
+            },
+        )
         return {"tools": tools_info}
 
     return router
