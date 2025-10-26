@@ -252,8 +252,8 @@ class ImageTextRenderer:
                 text_margin_right = int(width * 0.1)
                 max_text_width = width - text_margin_left - text_margin_right
 
-                # 垂直布局：文字占用70%的垂直空间
-                top_margin = int(height * 0.15)  # 顶部15%的边距
+                # 垂直布局：文字占用90%的垂直空间
+                top_margin = int(height * 0.07)  # 顶部5%的边距
 
                 lines = self._wrap_text(text, max_text_width, font)
 
@@ -276,12 +276,11 @@ class ImageTextRenderer:
                     # 对于空行，绘制一个空格以保持行间距
                     line_to_draw = line if line.strip() else " "
 
-                    # 计算文字宽度，用于水平居中
+                    # 计算文字宽度，用于水平居左
                     bbox = draw.textbbox((0, 0), line_to_draw, font=font)
-                    text_width = bbox[2] - bbox[0]
 
-                    # 根据图片比例计算水平位置
-                    x = text_margin_left + (max_text_width - text_width) // 2
+                    # 左对齐
+                    x = text_margin_left
 
                     # y坐标应该是基线位置，使用实际的行高
                     y = (
@@ -407,8 +406,7 @@ class ImageTextRenderer:
         # 长图：最大化文字区域利用率
         chars_per_line = int(width * 0.8 / (self.font_size * 0.6))  # 使用80%的宽度
         text_margin_left = int(width * 0.1)  # 左右各10%的边距
-        text_margin_right = int(width * 0.1)
-        top_margin = int(height * 0.15)  # 顶部15%的边距
+        top_margin = int(height * 0.07)  # 顶部7%的边距
 
         # 将文字按行分割，正确处理已有的换行符
         lines = []
@@ -448,11 +446,8 @@ class ImageTextRenderer:
                 line, font, font_scale, thickness
             )
 
-            # 水平居中
-            x = (
-                text_margin_left
-                + (width - text_margin_left - text_margin_right - text_width) // 2
-            )
+            # 水平居左
+            x = text_margin_left
 
             # 绘制文字
             cv2.putText(
@@ -497,6 +492,17 @@ class LongTextContent:
         # 处理常见的转义字符，如 \n, \t, \\, \" 等
         # 使用更安全的方法，只替换已知的转义序列
         self.input_content = self._decode_safe_escapes(self.input_content)
+
+        # 为每段开头添加缩进
+        paragraphs = self.input_content.split("\n\n")
+        indented_paragraphs = []
+        for para in paragraphs:
+            if para.strip():
+                indented_paragraphs.append("    " + para)  # 使用4个空格缩进
+            else:
+                indented_paragraphs.append(para)
+        self.input_content = "\n\n".join(indented_paragraphs)
+
         self.background_image_path = args.background_image_path
         self.output_folder_path = args.output_folder_path
         self.font_color = getattr(args, "font_color", "black")
@@ -794,21 +800,21 @@ class LongTextContent:
         height, width = image.shape[:2]
 
         # 此时图片已经是9:16比例
-        # 文字区域：70%高度，80%宽度
-        available_height = height * 0.7
+        # 文字区域：85%高度，80%宽度
+        available_height = height * 0.85
         max_text_width = width * 0.8
 
         # 估算行高和每行字符数
         font_size = 32
-        line_height = int(font_size * 1.4)  # 1.4倍行间距
+        line_height = int(font_size * 1.0)  # 1.0倍行间距
         chars_per_line = int(max_text_width / (font_size * 0.6))  # 估算每行字符数
         lines_per_page = int(available_height / line_height)
 
-        # 将估算值调整为原来的1.3倍以增加每页文字量
+        # 将估算值调整为原来的1.4倍以增加每页文字量
         estimated = lines_per_page * chars_per_line
-        max_chars_per_page = max(50, int(estimated * 1.3))
+        max_chars_per_page = max(50, int(estimated * 1.4))
         self.logger.info(
-            f"图片尺寸：{width}x{height}, 原估算每页{estimated}字符，调整为{max_chars_per_page}字符 (1.3倍)"
+            f"图片尺寸：{width}x{height}, 原估算每页{estimated}字符，调整为{max_chars_per_page}字符 (1.4倍)"
         )
 
         # 初始化文本分页器
