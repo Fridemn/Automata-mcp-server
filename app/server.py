@@ -200,7 +200,10 @@ class AutomataMCPServer:
                     ).replace("\\", ".")
                     module = importlib.import_module(module_path)
                     # Get the tool class (assume it's named <Modname>Tool)
-                    tool_class_name = f"{modname.capitalize()}Tool"
+                    tool_class_name = (
+                        "".join(word.capitalize() for word in modname.split("_"))
+                        + "Tool"
+                    )
                     tool_class = getattr(module, tool_class_name)
                     # Instantiate the tool
                     tool_instance = tool_class()
@@ -227,6 +230,7 @@ class AutomataMCPServer:
         route_config = tool_instance.get_route_config()
         endpoint = route_config["endpoint"]
         params_class = route_config["params_class"]
+        use_form = route_config.get("use_form", False)
 
         async def verify_api_key(
             x_api_key: str | None = Header(None, alias="X-API-Key"),
@@ -236,29 +240,110 @@ class AutomataMCPServer:
                 raise HTTPException(status_code=401, detail="Invalid API key")
             return x_api_key
 
-        def create_tool_endpoint(p_class):
-            async def tool_endpoint(
-                params,  # type: ignore
-                _api_key: str = Depends(verify_api_key),
-            ):
-                # params is already validated by FastAPI as the correct type
-                # Get the tool name from the route config or use modname
-                tool_name = route_config.get("tool_name", modname)
-                result = await tool_instance.call_tool(tool_name, params.model_dump())
-                # Convert to dict for JSON response
-                return {
-                    "content": [
-                        {"type": item.type, "text": item.text}
-                        for item in result
-                        if hasattr(item, "type") and hasattr(item, "text")
-                    ],
-                }
+        def create_tool_endpoint(p_class, use_form_flag):
+            if use_form_flag:
+                # For form data, create a dynamic function with proper Form parameters
+                import inspect
+                from fastapi import Form
+
+                # Get the fields from the params class
+                fields = p_class.model_fields
+
+                # Create parameter list for function signature
+                params = []
+
+                for field_name, field_info in fields.items():
+                    if field_info.is_required():
+                        params.append(
+                            inspect.Parameter(
+                                field_name,
+                                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                                default=Form(
+                                    ..., description=field_info.description or ""
+                                ),
+                            )
+                        )
+                    else:
+                        params.append(
+                            inspect.Parameter(
+                                field_name,
+                                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                                default=Form(
+                                    field_info.default,
+                                    description=field_info.description or "",
+                                ),
+                            )
+                        )
+
+                # Add API key parameter
+                params.append(
+                    inspect.Parameter(
+                        "_api_key",
+                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                        default=Depends(verify_api_key),
+                    )
+                )
+
+                # Create the function signature
+                sig = inspect.Signature(params)
+
+                async def tool_endpoint(*args, **kwargs):
+                    # The function will receive form parameters directly
+                    # Separate API key from form data
+                    kwargs.pop("_api_key", None)
+                    form_data = kwargs
+
+                    # Validate form data with the params_class
+                    try:
+                        params_obj = p_class(**form_data)
+                    except ValueError as e:
+                        raise HTTPException(status_code=422, detail=str(e))
+
+                    # Get the tool name from the route config or use modname
+                    tool_name = route_config.get("tool_name", modname)
+                    result = await tool_instance.call_tool(
+                        tool_name, params_obj.model_dump()
+                    )
+                    # Convert to dict for JSON response
+                    return {
+                        "content": [
+                            {"type": item.type, "text": item.text}
+                            for item in result
+                            if hasattr(item, "type") and hasattr(item, "text")
+                        ],
+                    }
+
+                # Set the signature on the function
+                tool_endpoint.__signature__ = sig
+
+                return tool_endpoint
+            else:
+
+                async def tool_endpoint(
+                    params,  # type: ignore
+                    _api_key: str = Depends(verify_api_key),
+                ):
+                    # params is already validated by FastAPI as the correct type
+                    # Get the tool name from the route config or use modname
+                    tool_name = route_config.get("tool_name", modname)
+                    result = await tool_instance.call_tool(
+                        tool_name, params.model_dump()
+                    )
+                    # Convert to dict for JSON response
+                    return {
+                        "content": [
+                            {"type": item.type, "text": item.text}
+                            for item in result
+                            if hasattr(item, "type") and hasattr(item, "text")
+                        ],
+                    }
 
             # Set the type annotation dynamically
-            tool_endpoint.__annotations__["params"] = p_class
+            if not use_form_flag:
+                tool_endpoint.__annotations__["params"] = p_class
             return tool_endpoint
 
-        tool_endpoint_func = create_tool_endpoint(params_class)
+        tool_endpoint_func = create_tool_endpoint(params_class, use_form)
 
         self.app.post(endpoint)(tool_endpoint_func)
         logger.info(f"Registered route {endpoint} for tool {modname}")

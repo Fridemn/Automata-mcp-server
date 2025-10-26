@@ -1,0 +1,5 @@
+enabled: true
+packages:
+  - opencv-python
+  - pillow
+  - numpy

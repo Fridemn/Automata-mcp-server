@@ -30,6 +30,7 @@ class PolishTool(BaseMCPTool):
         return {
             "endpoint": "/tools/polish",
             "params_class": PolishParams,
+            "use_form": True,
         }
 
     async def list_tools(self) -> list[Tool]:

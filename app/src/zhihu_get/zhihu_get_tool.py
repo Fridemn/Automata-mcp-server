@@ -18,7 +18,7 @@ class ZhihuGetParams(BaseModel):
     url: str = Field(description="The Zhihu URL to get content from")
 
 
-class Zhihu_getTool(BaseMCPTool):
+class ZhihuGetTool(BaseMCPTool):
     _HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0",
     }
@@ -80,11 +80,15 @@ class Zhihu_getTool(BaseMCPTool):
 
     async def _fetch_and_parse_content(self, column_id: str) -> str:
         """Fetch HTML from Zhihu story API and extract content from index-module-root div"""
-        fetch_url = f"https://story.zhihu.com/blogger/next-manuscript/paid_column/{column_id}"
+        fetch_url = (
+            f"https://story.zhihu.com/blogger/next-manuscript/paid_column/{column_id}"
+        )
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(fetch_url, headers=self._HEADERS, timeout=30.0)
+                response = await client.get(
+                    fetch_url, headers=self._HEADERS, timeout=30.0
+                )
                 response.raise_for_status()
 
             html_content = response.text

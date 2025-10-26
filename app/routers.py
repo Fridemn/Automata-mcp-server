@@ -65,6 +65,12 @@ def create_router(authenticate_func, tools_count_func):
                 "description": "Publish content to Xiaohongshu (小红书)",
             },
         )
+        tools_info.append(
+            {
+                "name": "create_long_text_content",
+                "description": "Generate long text content images for novels etc.",
+            },
+        )
         return {"tools": tools_info}
 
     @router.post("/cookies/douyin/get")
