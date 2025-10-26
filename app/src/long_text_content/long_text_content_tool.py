@@ -33,8 +33,13 @@ class TextPager:
 
     def paginate(self, text):
         """
-        将文本分页
+        将文本分页，避免标点符号单独被分到下一页，优先考虑段落分隔
         """
+        # 定义句子结束符、段落分隔符和所有标点符号
+        sentence_endings = "。？！"
+        paragraph_separator = "\n\n"
+        all_punctuation = "。？！，；：" "''（）【】《》" "'"
+
         # 清理文本
         text = text.strip()
 
@@ -51,27 +56,115 @@ class TextPager:
                 pages.append(remaining_text)
                 break
 
-            # 找到合适的分割点（句号、问号、感叹号）
-            page_text = remaining_text[: self.max_chars_per_page]
-            last_sentence_end = max(
-                page_text.rfind("。"),
-                page_text.rfind("？"),
-                page_text.rfind("！"),
-                page_text.rfind("\n\n"),  # 段落分隔
-            )
+            # 在允许的范围内找到最佳分割点
+            max_search_pos = min(
+                len(remaining_text), int(self.max_chars_per_page * 1.3)
+            )  # 允许30%超限
+            search_text = remaining_text[:max_search_pos]
 
-            if (
-                last_sentence_end > self.max_chars_per_page * 0.7
-            ):  # 如果在文本70%以上找到句子结束
-                page_content = remaining_text[: last_sentence_end + 1]
-            else:
-                # 找不到合适的分割点，强制分割
-                page_content = remaining_text[: self.max_chars_per_page]
+            # 找到所有可能的分割位置：段落分隔和句子结束
+            split_candidates = []
 
+            # 首先查找段落分隔符
+            para_pos = search_text.find(paragraph_separator)
+            while para_pos != -1:
+                split_candidates.append(
+                    (para_pos + len(paragraph_separator), "paragraph")
+                )
+                para_pos = search_text.find(paragraph_separator, para_pos + 1)
+
+            # 然后查找句子结束符
+            for i, char in enumerate(search_text):
+                if char in sentence_endings:
+                    split_candidates.append((i + 1, "sentence"))
+
+            # 按位置排序
+            split_candidates.sort(key=lambda x: x[0], reverse=True)
+
+            split_pos = self.max_chars_per_page
+
+            # 从后往前检查每个可能的分割点
+            for pos, split_type in split_candidates:
+                if pos < self.max_chars_per_page * 0.5:  # 太靠前了，跳过
+                    continue
+
+                candidate_split = pos
+
+                # 检查分割后下一页的第一个字符
+                if candidate_split < len(remaining_text):
+                    next_page_first_char = remaining_text[candidate_split]
+
+                    # 检查下一页是否以标点开头或是否太短（可能是标题）
+                    is_bad_start = (
+                        next_page_first_char in all_punctuation  # 以标点开头
+                        or self._is_likely_title(
+                            remaining_text[candidate_split:].strip()
+                        )  # 可能是标题
+                    )
+
+                    if not is_bad_start:
+                        # 找到了好的分割点
+                        split_pos = candidate_split
+                        break
+
+                    # 如果是段落分隔，稍微放宽条件
+                    if split_type == "paragraph":
+                        # 检查下一段是否太短（可能是标题）
+                        next_paragraph = remaining_text[candidate_split:].strip()
+                        if len(next_paragraph) > 20:  # 如果下一段够长，接受这个分割点
+                            split_pos = candidate_split
+                            break
+
+                else:
+                    # 已经是文本末尾
+                    split_pos = candidate_split
+                    break
+
+            # 如果没找到合适的分割点，使用字符数限制
+            if split_pos == self.max_chars_per_page:
+                # 最后尝试避免在标点前断开
+                if self.max_chars_per_page < len(remaining_text):
+                    next_char = remaining_text[self.max_chars_per_page]
+                    if next_char in all_punctuation:
+                        # 向后查找非标点位置
+                        for offset in range(
+                            1,
+                            min(30, len(remaining_text) - self.max_chars_per_page + 1),
+                        ):
+                            check_pos = self.max_chars_per_page + offset
+                            if check_pos >= len(remaining_text):
+                                break
+                            check_char = remaining_text[check_pos]
+                            if check_char not in all_punctuation:
+                                split_pos = check_pos
+                                break
+
+            page_content = remaining_text[:split_pos]
             pages.append(page_content)
-            remaining_text = remaining_text[len(page_content) :]
+            remaining_text = remaining_text[split_pos:]
 
         return pages
+
+    def _is_likely_title(self, text):
+        """
+        判断文本是否可能是标题
+        """
+        if not text:
+            return False
+
+        # 标题特征：较短、没有句子结束符、以特定字符开头等
+        lines = text.split("\n")
+        first_line = lines[0].strip()
+
+        # 如果第一行很短（少于20字符），可能是标题
+        if len(first_line) < 20:
+            return True
+
+        # 如果第一行没有句子结束符，也可能是标题
+        if not any(char in first_line for char in "。？！"):
+            return True
+
+        return False
 
 
 class ImageTextRenderer:
@@ -211,7 +304,10 @@ class ImageTextRenderer:
             self._render_with_opencv(image, text, output_path)
 
     def _wrap_text(self, text, max_width, font):
-        """将文字按宽度换行，正确处理已有的换行符"""
+        """将文字按宽度换行，正确处理已有的换行符，避免标点符号单独成行"""
+        # 定义完整的标点符号集合（包括中文和英文标点）
+        punctuation = "。？！，；：" "''（）【】《》" "'.,?!:;()[]{}、—…"
+
         # 首先按已有的换行符分割文本
         paragraphs = text.split("\n")
         all_lines = []
@@ -225,17 +321,70 @@ class ImageTextRenderer:
             lines = []
             current_line = ""
 
-            for char in paragraph:
+            i = 0
+            while i < len(paragraph):
+                char = paragraph[i]
+
                 # 测试添加字符后的宽度
                 test_line = current_line + char
                 bbox = font.getbbox(test_line)
-                if bbox[2] - bbox[0] <= max_width:
+                test_width = bbox[2] - bbox[0]
+
+                if test_width <= max_width:
+                    # 可以添加这个字符
                     current_line = test_line
+                    i += 1
                 else:
-                    # 如果当前行不为空，添加到行列表
+                    # 无法添加这个字符，需要处理换行
                     if current_line:
+                        # 当前行不为空，检查是否可以特殊处理标点符号
+                        if char in punctuation:
+                            # 对于标点符号，允许稍微超过宽度（15%）以避免单独成行
+                            extended_width = max_width * 1.15
+                            if test_width <= extended_width:
+                                current_line = test_line
+                                i += 1
+                                continue
+
+                            # 如果还是无法合并，尝试在句子结束符处分割
+                            remaining_text = paragraph[i:]
+                            best_split_pos = 1
+
+                            # 优先在句子结束符（。？！）处分割
+                            sentence_enders = "。？！"
+                            for j, c in enumerate(
+                                remaining_text[:15]
+                            ):  # 向前看15个字符
+                                if c in sentence_enders:
+                                    candidate_line = (
+                                        current_line + remaining_text[: j + 1]
+                                    )
+                                    candidate_bbox = font.getbbox(candidate_line)
+                                    candidate_width = (
+                                        candidate_bbox[2] - candidate_bbox[0]
+                                    )
+                                    if candidate_width <= extended_width:
+                                        best_split_pos = j + 1
+                                        break
+
+                            if best_split_pos > 1:
+                                # 找到了合适的分割点
+                                current_line = (
+                                    current_line + remaining_text[:best_split_pos]
+                                )
+                                i += best_split_pos
+                                lines.append(current_line)
+                                current_line = ""
+                                continue
+
+                        # 普通换行：添加当前行，新起一行
                         lines.append(current_line)
-                    current_line = char
+                        current_line = char
+                        i += 1
+                    else:
+                        # 当前行为空，直接添加字符
+                        current_line = char
+                        i += 1
 
             # 添加最后一行
             if current_line:
@@ -381,7 +530,7 @@ class LongTextContent:
 
     def _prepare_background_image(self):
         """
-        检查背景图片比例，如果不是9:16则自动裁剪
+        检查背景图片比例，如果不是9:16则自动裁剪，然后缩放到1080*1920
         """
         image = cv2.imread(self.background_image_path)
         if image is None:
@@ -391,29 +540,53 @@ class LongTextContent:
         aspect_ratio = width / height
         target_ratio = 9 / 16  # 0.5625
 
+        processed_image = image
+        processed_height, processed_width = height, width
+
         if abs(aspect_ratio - target_ratio) < 0.01:  # 已经接近9:16
-            return self.background_image_path
+            self.logger.info(f"背景图片已经是9:16比例 ({width}x{height})")
+        else:
+            # 需要裁剪
+            self.logger.info(f"背景图片比例 {aspect_ratio:.3f} 不为9:16，准备裁剪")
 
-        # 需要裁剪
-        self.logger.info(f"背景图片比例 {aspect_ratio:.3f} 不为9:16，准备裁剪")
+            if aspect_ratio > target_ratio:  # 图片更宽，裁剪宽度
+                new_width = int(height * target_ratio)
+                offset = (width - new_width) // 2
+                processed_image = image[:, offset : offset + new_width]
+                processed_height, processed_width = height, new_width
+                self.logger.info(f"裁剪宽度: {width} -> {new_width}, 高度保持 {height}")
+            else:  # 图片更高，裁剪高度
+                new_height = int(width / target_ratio)
+                offset = (height - new_height) // 2
+                processed_image = image[offset : offset + new_height, :]
+                processed_height, processed_width = new_height, width
+                self.logger.info(
+                    f"裁剪高度: {height} -> {new_height}, 宽度保持 {width}"
+                )
 
-        if aspect_ratio > target_ratio:  # 图片更宽，裁剪宽度
-            new_width = int(height * target_ratio)
-            offset = (width - new_width) // 2
-            cropped = image[:, offset : offset + new_width]
-            self.logger.info(f"裁剪宽度: {width} -> {new_width}, 高度保持 {height}")
-        else:  # 图片更高，裁剪高度
-            new_height = int(width / target_ratio)
-            offset = (height - new_height) // 2
-            cropped = image[offset : offset + new_height, :]
-            self.logger.info(f"裁剪高度: {height} -> {new_height}, 宽度保持 {width}")
+        # 缩放到1080*1920
+        target_width, target_height = 1080, 1920
+        if processed_width != target_width or processed_height != target_height:
+            self.logger.info(
+                f"缩放图片: {processed_width}x{processed_height} -> {target_width}x{target_height}"
+            )
+            processed_image = cv2.resize(
+                processed_image,
+                (target_width, target_height),
+                interpolation=cv2.INTER_LANCZOS4,
+            )
+            processed_height, processed_width = target_height, target_width
 
-        # 保存裁剪后的图片
-        cropped_path = os.path.join(self.output_folder_path, "cropped_background.png")
-        cv2.imwrite(cropped_path, cropped)
-        self.logger.info(f"裁剪后的图片保存到: {cropped_path}")
+        # 保存处理后的图片
+        processed_path = os.path.join(
+            self.output_folder_path, "processed_background.png"
+        )
+        cv2.imwrite(processed_path, processed_image)
+        self.logger.info(
+            f"处理后的图片保存到: {processed_path} ({processed_width}x{processed_height})"
+        )
 
-        return cropped_path
+        return processed_path
 
     def _calculate_page_lines(self, page_content, max_text_width):
         """
@@ -451,6 +624,27 @@ class LongTextContent:
                 )
         return total_lines
 
+    def _is_likely_title(self, text):
+        """
+        判断文本是否可能是标题
+        """
+        if not text:
+            return False
+
+        # 标题特征：较短、没有句子结束符、以特定字符开头等
+        lines = text.split("\n")
+        first_line = lines[0].strip()
+
+        # 如果第一行很短（少于20字符），可能是标题
+        if len(first_line) < 20:
+            return True
+
+        # 如果第一行没有句子结束符，也可能是标题
+        if not any(char in first_line for char in "。？！"):
+            return True
+
+        return False
+
     def _adjust_pagination_for_overflow(self, pages, available_height, max_text_width):
         """
         检测并调整分页以避免内容溢出
@@ -477,50 +671,104 @@ class LongTextContent:
                     f"检测到页面溢出 ({page_lines} > {max_lines_per_page} 行)，重新分页"
                 )
 
-                # 将溢出的内容拆分
+                # 将溢出的内容拆分，使用智能分页避免标点单独成页
                 remaining_content = page_content
+
                 while remaining_content:
-                    # 尝试找到合适的分割点
-                    test_content = remaining_content
-                    test_lines = self._calculate_page_lines(
-                        test_content, max_text_width
+                    # 计算当前剩余内容的行数
+                    current_lines = self._calculate_page_lines(
+                        remaining_content, max_text_width
                     )
 
-                    if test_lines <= max_lines_per_page:
-                        adjusted_pages.append(test_content)
+                    if current_lines <= max_lines_per_page:
+                        # 剩余内容适合一页
+                        adjusted_pages.append(remaining_content)
                         break
 
-                    # 减少内容长度直到适合
-                    # 估算需要减少的字符数
-                    reduce_ratio = max_lines_per_page / test_lines
-                    target_length = max(
-                        50, int(len(test_content) * reduce_ratio * 0.8)
-                    )  # 留一些余量
+                    # 需要分割，找到合适的分割点
+                    # 估算目标长度
+                    target_ratio = max_lines_per_page / current_lines
+                    estimated_target_length = max(
+                        100, int(len(remaining_content) * target_ratio * 0.9)
+                    )
 
-                    # 找到合适的分割点
-                    split_pos = target_length
-                    if split_pos < len(test_content):
-                        # 尝试在句子结束处分割
-                        search_end = min(split_pos + 50, len(test_content))
-                        sentence_end = test_content.rfind("。", split_pos, search_end)
-                        if sentence_end == -1:
-                            sentence_end = test_content.rfind(
-                                "！", split_pos, search_end
-                            )
-                        if sentence_end == -1:
-                            sentence_end = test_content.rfind(
-                                "？", split_pos, search_end
-                            )
-                        if sentence_end == -1:
-                            sentence_end = test_content.rfind(
-                                "\n", split_pos, search_end
-                            )
-                        if sentence_end > split_pos * 0.7:  # 在合理范围内找到句子结束
-                            split_pos = sentence_end + 1
+                    # 在估算长度范围内寻找最佳分割点
+                    max_search_length = min(
+                        len(remaining_content), int(estimated_target_length * 1.3)
+                    )
+                    search_text = remaining_content[:max_search_length]
 
-                    page_part = test_content[:split_pos]
+                    # 找到所有可能的分割位置：段落分隔和句子结束
+                    split_candidates = []
+                    paragraph_separator = "\n\n"
+
+                    # 首先查找段落分隔符
+                    para_pos = search_text.find(paragraph_separator)
+                    while para_pos != -1:
+                        split_candidates.append(
+                            (para_pos + len(paragraph_separator), "paragraph")
+                        )
+                        para_pos = search_text.find(paragraph_separator, para_pos + 1)
+
+                    # 然后查找句子结束符
+                    sentence_endings = "。？！"
+                    for i, char in enumerate(search_text):
+                        if char in sentence_endings:
+                            split_candidates.append((i + 1, "sentence"))
+
+                    # 按位置排序
+                    split_candidates.sort(key=lambda x: x[0], reverse=True)
+
+                    split_pos = estimated_target_length
+
+                    # 从后往前检查每个可能的分割点
+                    for pos, split_type in split_candidates:
+                        if pos < estimated_target_length * 0.5:  # 太靠前了，跳过
+                            continue
+
+                        candidate_split = pos
+
+                        # 检查分割后下一页的第一个字符
+                        if candidate_split < len(remaining_content):
+                            next_page_first_char = remaining_content[candidate_split]
+
+                            # 检查下一页是否以标点开头或是否太短（可能是标题）
+                            all_punctuation = '。？！，；：""\'\'（）【】《》""\''
+                            is_bad_start = (
+                                next_page_first_char in all_punctuation  # 以标点开头
+                                or self._is_likely_title(
+                                    remaining_content[candidate_split:].strip()
+                                )  # 可能是标题
+                            )
+
+                            if not is_bad_start:
+                                # 找到了好的分割点
+                                split_pos = candidate_split
+                                break
+
+                            # 如果是段落分隔，稍微放宽条件
+                            if split_type == "paragraph":
+                                # 检查下一段是否太短（可能是标题）
+                                next_paragraph = remaining_content[
+                                    candidate_split:
+                                ].strip()
+                                if (
+                                    len(next_paragraph) > 20
+                                ):  # 如果下一段够长，接受这个分割点
+                                    split_pos = candidate_split
+                                    break
+
+                        else:
+                            # 已经是文本末尾
+                            split_pos = candidate_split
+                            break
+
+                    # 确保分割位置不会太小
+                    split_pos = max(split_pos, 50)
+
+                    page_part = remaining_content[:split_pos]
                     adjusted_pages.append(page_part)
-                    remaining_content = test_content[split_pos:]
+                    remaining_content = remaining_content[split_pos:]
 
                     if not remaining_content.strip():
                         break
@@ -556,11 +804,11 @@ class LongTextContent:
         chars_per_line = int(max_text_width / (font_size * 0.6))  # 估算每行字符数
         lines_per_page = int(available_height / line_height)
 
-        # 将估算值缩减为原来的2/3以避免溢出
+        # 将估算值调整为原来的1.3倍以增加每页文字量
         estimated = lines_per_page * chars_per_line
-        max_chars_per_page = max(50, int(estimated * 2 / 3))
+        max_chars_per_page = max(50, int(estimated * 1.3))
         self.logger.info(
-            f"图片尺寸：{width}x{height}, 原估算每页{estimated}字符，调整为{max_chars_per_page}字符 (2/3)"
+            f"图片尺寸：{width}x{height}, 原估算每页{estimated}字符，调整为{max_chars_per_page}字符 (1.3倍)"
         )
 
         # 初始化文本分页器
