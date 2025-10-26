@@ -180,8 +180,11 @@ class ImageTextRenderer:
 
                 # 绘制文字
                 for i, line in enumerate(lines):
+                    # 对于空行，绘制一个空格以保持行间距
+                    line_to_draw = line if line.strip() else " "
+
                     # 计算文字宽度，用于水平居中
-                    bbox = draw.textbbox((0, 0), line, font=font)
+                    bbox = draw.textbbox((0, 0), line_to_draw, font=font)
                     text_width = bbox[2] - bbox[0]
 
                     # 根据图片比例计算水平位置
@@ -194,7 +197,7 @@ class ImageTextRenderer:
 
                     # 绘制文字
                     text_color = self._get_font_color() + (255,)  # 添加alpha通道
-                    draw.text((x, y), font=font, fill=text_color, text=line)
+                    draw.text((x, y), font=font, fill=text_color, text=line_to_draw)
 
                 # 转换回OpenCV格式并保存
                 result_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
@@ -208,27 +211,39 @@ class ImageTextRenderer:
             self._render_with_opencv(image, text, output_path)
 
     def _wrap_text(self, text, max_width, font):
-        """将文字按宽度换行"""
-        lines = []
-        current_line = ""
+        """将文字按宽度换行，正确处理已有的换行符"""
+        # 首先按已有的换行符分割文本
+        paragraphs = text.split("\n")
+        all_lines = []
 
-        for char in text:
-            # 测试添加字符后的宽度
-            test_line = current_line + char
-            bbox = font.getbbox(test_line)
-            if bbox[2] - bbox[0] <= max_width:
-                current_line = test_line
-            else:
-                # 如果当前行不为空，添加到行列表
-                if current_line:
-                    lines.append(current_line)
-                current_line = char
+        for paragraph in paragraphs:
+            if not paragraph.strip():  # 空行
+                all_lines.append("")
+                continue
 
-        # 添加最后一行
-        if current_line:
-            lines.append(current_line)
+            # 对每个段落按宽度换行
+            lines = []
+            current_line = ""
 
-        return lines
+            for char in paragraph:
+                # 测试添加字符后的宽度
+                test_line = current_line + char
+                bbox = font.getbbox(test_line)
+                if bbox[2] - bbox[0] <= max_width:
+                    current_line = test_line
+                else:
+                    # 如果当前行不为空，添加到行列表
+                    if current_line:
+                        lines.append(current_line)
+                    current_line = char
+
+            # 添加最后一行
+            if current_line:
+                lines.append(current_line)
+
+            all_lines.extend(lines)
+
+        return all_lines
 
     def _render_with_opencv(self, image, text, output_path):
         """使用OpenCV绘制文字"""
@@ -246,19 +261,28 @@ class ImageTextRenderer:
         text_margin_right = int(width * 0.1)
         top_margin = int(height * 0.15)  # 顶部15%的边距
 
-        # 将文字按行分割
+        # 将文字按行分割，正确处理已有的换行符
         lines = []
-        line = ""
 
-        for char in text:
-            if len(line) >= chars_per_line and char in "。？！":
-                lines.append(line + char)
-                line = ""
-            else:
-                line += char
+        # 首先按换行符分割
+        paragraphs = text.split("\n")
 
-        if line:
-            lines.append(line)
+        for paragraph in paragraphs:
+            if not paragraph.strip():  # 空行
+                lines.append("")
+                continue
+
+            # 对每个段落按字符数和标点符号换行
+            line = ""
+            for char in paragraph:
+                if len(line) >= chars_per_line and char in "。？！":
+                    lines.append(line + char)
+                    line = ""
+                else:
+                    line += char
+
+            if line:
+                lines.append(line)
 
         # 计算行高
         line_height = int(self.font_size * self.line_spacing)
@@ -266,6 +290,10 @@ class ImageTextRenderer:
         # 绘制文字
         y = top_margin + line_height
         for line in lines:
+            if not line.strip():  # 空行
+                y += line_height  # 只是增加行间距，不绘制文字
+                continue
+
             # 获取文字尺寸
             (text_width, text_height), baseline = cv2.getTextSize(
                 line, font, font_scale, thickness
@@ -317,12 +345,39 @@ class LongTextContent:
             raise ValueError("background_image_path不能为空")
 
         self.input_content = args.input_content.strip()
+        # 处理常见的转义字符，如 \n, \t, \\, \" 等
+        # 使用更安全的方法，只替换已知的转义序列
+        self.input_content = self._decode_safe_escapes(self.input_content)
         self.background_image_path = args.background_image_path
         self.output_folder_path = args.output_folder_path
         self.font_color = getattr(args, "font_color", "black")
 
         # 初始化组件
         self.image_renderer = ImageTextRenderer(font_color=self.font_color)
+
+    def _decode_safe_escapes(self, text):
+        """
+        安全地解码常见的转义序列，避免破坏正常的Unicode字符
+        只处理 \n, \t, \\, \" 等基本转义序列
+        """
+        if not isinstance(text, str):
+            return text
+
+        # 定义需要处理的转义序列映射
+        escape_map = {
+            "\\n": "\n",  # 换行
+            "\\t": "\t",  # 制表符
+            "\\r": "\r",  # 回车
+            "\\\\": "\\",  # 反斜杠
+            '\\"': '"',  # 双引号
+            "\\'": "'",  # 单引号
+        }
+
+        result = text
+        for escape_seq, actual_char in escape_map.items():
+            result = result.replace(escape_seq, actual_char)
+
+        return result
 
     def _prepare_background_image(self):
         """
@@ -359,6 +414,118 @@ class LongTextContent:
         self.logger.info(f"裁剪后的图片保存到: {cropped_path}")
 
         return cropped_path
+
+    def _calculate_page_lines(self, page_content, max_text_width):
+        """
+        预计算页面内容的行数
+        """
+        try:
+            # 尝试使用PIL进行精确计算
+            from PIL import ImageFont
+
+            font = self.image_renderer._find_chinese_font()
+            if font:
+                font = ImageFont.truetype(font, self.image_renderer.font_size)
+                lines = self.image_renderer._wrap_text(
+                    page_content, max_text_width, font
+                )
+                return len(lines)
+        except ImportError:
+            pass
+
+        # 如果没有PIL，使用估算方法
+        # 简单估算：假设每行大约30个字符
+        chars_per_line = max(
+            20, int(max_text_width / (self.image_renderer.font_size * 0.6))
+        )
+        lines = page_content.split("\n")
+        total_lines = 0
+        for line in lines:
+            if not line.strip():
+                total_lines += 1  # 空行算一行
+            else:
+                total_lines += max(
+                    1,
+                    len(line) // chars_per_line
+                    + (1 if len(line) % chars_per_line else 0),
+                )
+        return total_lines
+
+    def _adjust_pagination_for_overflow(self, pages, available_height, max_text_width):
+        """
+        检测并调整分页以避免内容溢出
+        """
+        font_size = 32
+        line_height = int(font_size * 1.4)  # 1.4倍行间距
+        max_lines_per_page = int(available_height / line_height)
+
+        self.logger.info(f"每页最大行数: {max_lines_per_page}")
+
+        # 检查每一页是否会溢出
+        adjusted_pages = []
+
+        for page_content in pages:
+            page_lines = self._calculate_page_lines(page_content, max_text_width)
+            self.logger.info(f"页面行数: {page_lines}, 内容长度: {len(page_content)}")
+
+            if page_lines <= max_lines_per_page:
+                # 页面适合，直接添加
+                adjusted_pages.append(page_content)
+            else:
+                # 页面会溢出，需要重新分页
+                self.logger.warning(
+                    f"检测到页面溢出 ({page_lines} > {max_lines_per_page} 行)，重新分页"
+                )
+
+                # 将溢出的内容拆分
+                remaining_content = page_content
+                while remaining_content:
+                    # 尝试找到合适的分割点
+                    test_content = remaining_content
+                    test_lines = self._calculate_page_lines(
+                        test_content, max_text_width
+                    )
+
+                    if test_lines <= max_lines_per_page:
+                        adjusted_pages.append(test_content)
+                        break
+
+                    # 减少内容长度直到适合
+                    # 估算需要减少的字符数
+                    reduce_ratio = max_lines_per_page / test_lines
+                    target_length = max(
+                        50, int(len(test_content) * reduce_ratio * 0.8)
+                    )  # 留一些余量
+
+                    # 找到合适的分割点
+                    split_pos = target_length
+                    if split_pos < len(test_content):
+                        # 尝试在句子结束处分割
+                        search_end = min(split_pos + 50, len(test_content))
+                        sentence_end = test_content.rfind("。", split_pos, search_end)
+                        if sentence_end == -1:
+                            sentence_end = test_content.rfind(
+                                "！", split_pos, search_end
+                            )
+                        if sentence_end == -1:
+                            sentence_end = test_content.rfind(
+                                "？", split_pos, search_end
+                            )
+                        if sentence_end == -1:
+                            sentence_end = test_content.rfind(
+                                "\n", split_pos, search_end
+                            )
+                        if sentence_end > split_pos * 0.7:  # 在合理范围内找到句子结束
+                            split_pos = sentence_end + 1
+
+                    page_part = test_content[:split_pos]
+                    adjusted_pages.append(page_part)
+                    remaining_content = test_content[split_pos:]
+
+                    if not remaining_content.strip():
+                        break
+
+        return adjusted_pages
 
     def start(self):
         """
@@ -401,6 +568,12 @@ class LongTextContent:
 
         # 对文本进行分页
         pages = self.text_pager.paginate(self.input_content)
+
+        # 检测并调整分页以避免内容溢出
+        pages = self._adjust_pagination_for_overflow(
+            pages, available_height, max_text_width
+        )
+
         self.logger.info(f"文本已分为 {len(pages)} 页")
 
         # 为每个页面生成图片文件
