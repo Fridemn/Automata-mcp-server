@@ -1,197 +1,177 @@
 <template>
-  <div class="workflow-home">
-    <!-- 左侧侧边栏 -->
-    <div class="sidebar">
-      <div class="sidebar-header">
-        <h3>工作流控制</h3>
-      </div>
-      <div class="sidebar-content">
-        <div class="platform-config">
-          <h4>发布平台配置</h4>
-          <div class="platform-options">
-            <label class="platform-option">
-              <input v-model="workflowConfig.platforms.xiaohongshu" type="checkbox" />
-              <span>小红书</span>
-            </label>
-            <label class="platform-option">
-              <input v-model="workflowConfig.platforms.douyin" type="checkbox" />
-              <span>抖音</span>
-            </label>
+  <div class="min-h-[calc(100vh-64px)] bg-gradient-to-br from-blue-400 to-purple-600 font-['Segoe_UI',_Tahoma,_Geneva,_Verdana,_sans-serif]">
+    <div class="max-w-[1400px] mx-auto px-5 py-5 flex flex-col lg:flex-row gap-5">
+      <!-- 主内容区域 -->
+      <div class="flex-1 order-2 lg:order-1">
+        <div class="workflow-container">
+          <div class="workflow-header mb-8">
+            <h1 class="text-3xl font-bold text-white mb-2">智能内容发布工作流</h1>
+            <p class="text-white/80 text-lg">从知乎获取内容，AI润色，生成图片，一键发布到小红书</p>
           </div>
-        </div>
 
-        <button @click="runFullWorkflow" :disabled="isWorkflowRunning" class="btn-workflow">
-          {{ isWorkflowRunning ? '工作流执行中...' : '运行完整工作流' }}
-        </button>
-        <button @click="resetWorkflow" class="btn-reset">重置工作流</button>
-        <button @click="archiveWorkflow" class="btn-archive">归档工作流</button>
-        <button @click="saveWorkflowState" class="btn-save">保存状态</button>
-        <button @click="loadWorkflowState" class="btn-load">恢复状态</button>
-
-        <div class="workflow-info" v-if="currentWorkflowId">
-          <p><strong>当前工作流:</strong></p>
-          <p>{{ currentWorkflowId }}</p>
-          <p><strong>进度:</strong> {{ Math.round(workflowProgress) }}%</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- 主内容区域 -->
-    <div class="main-content">
-      <div class="workflow-container">
-        <div class="workflow-header">
-          <h1>智能内容发布工作流</h1>
-          <p>自动化从知乎获取内容到发布到小红书的完整流程</p>
-        </div>
-
-        <div class="workflow-steps">
+          <div class="workflow-steps">
           <div
             v-for="(step, index) in workflowSteps"
             :key="step.id"
-            class="step-card"
-            :class="{ active: currentStep === index, completed: step.status === 'completed', error: step.status === 'error' }"
+            class="bg-white/95 backdrop-blur-[10px] rounded-2xl p-5 mb-4 shadow-lg border border-white/20"
+            :class="{
+              'ring-2 ring-blue-500': currentStep === index,
+              'bg-green-50 border-green-200': step.status === 'completed',
+              'bg-red-50 border-red-200': step.status === 'error'
+            }"
           >
-          <div class="step-header">
-            <div class="step-number">{{ index + 1 }}</div>
-            <div class="step-title">{{ step.title }}</div>
-            <div class="step-status">
-              <span v-if="step.status === 'pending'" class="status pending">待执行</span>
-              <span v-if="step.status === 'running'" class="status running">执行中</span>
-              <span v-if="step.status === 'completed'" class="status completed">完成</span>
-              <span v-if="step.status === 'error'" class="status error">错误</span>
-            </div>
-          </div>
-
-          <div class="step-content">
-            <p class="step-description">{{ step.description }}</p>
-
-            <!-- Cookie获取步骤 -->
-            <WorkflowStepCookiesXhs
-              v-if="step.id === 'cookies-xhs'"
-              :step="step"
-              @update-step="updateStep"
-              @save-state="saveWorkflowState"
-            />
-
-            <WorkflowStepCookiesDy
-              v-if="step.id === 'cookies-dy'"
-              :step="step"
-              @update-step="updateStep"
-              @save-state="saveWorkflowState"
-            />
-
-            <!-- 知乎内容获取步骤 -->
-            <WorkflowStepZhihu
-              v-if="step.id === 'zhihu'"
-              :step="step"
-              :zhihu-url="workflowData.zhihuUrl"
-              @update-step="updateStep"
-              @update-zhihu-url="updateZhihuUrl"
-              @update-content-to-polish="updateContentToPolish"
-              @save-state="saveWorkflowState"
-            />
-
-            <!-- 内容润色步骤 -->
-            <WorkflowStepPolish
-              v-if="step.id === 'polish'"
-              :step="step"
-              :content-to-polish="workflowData.contentToPolish"
-              :polish-prompt="workflowData.polishPrompt"
-              @update-step="updateStep"
-              @update-content-to-polish="updateContentToPolish"
-              @update-polish-prompt="updatePolishPrompt"
-              @update-publish-data="updatePublishData"
-              @save-state="saveWorkflowState"
-            />
-
-            <!-- 长文本图片生成步骤 -->
-            <WorkflowStepImageXhs
-              v-if="step.id === 'image-xhs'"
-              :step="step"
-              :publish-data="workflowData.publishData"
-              @update-step="updateStep"
-              @save-state="saveWorkflowState"
-            />
-
-            <!-- 视频剪辑步骤 -->
-            <WorkflowStepVideoEdit
-              v-if="step.id === 'video-edit'"
-              :step="step"
-              :publish-data="workflowData.publishData"
-              :workflow-id="currentWorkflowId"
-              @update-step="updateStep"
-              @save-state="saveWorkflowState"
-            />
-
-            <!-- 小红书发布步骤 -->
-            <WorkflowStepPublishXhs
-              v-if="step.id === 'publish-xhs'"
-              :step="step"
-              :publish-data="workflowData.publishData"
-              @update-step="updateStep"
-              @update-publish-data="updatePublishData"
-              @save-state="saveWorkflowState"
-            />
-
-            <!-- 抖音发布步骤 -->
-            <WorkflowStepPublishDy
-              v-if="step.id === 'publish-dy'"
-              :step="step"
-              @update-step="updateStep"
-              @save-state="saveWorkflowState"
-            />
-
-            <!-- 响应显示 -->
-            <div v-if="step.response" class="step-response">
-              <ApiResponsePreview :response="step.response" />
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center font-semibold text-sm">{{ index + 1 }}</div>
+                <div class="font-semibold text-gray-800">{{ step.title }}</div>
+              </div>
+              <div class="text-sm">
+                <span v-if="step.status === 'pending'" class="px-2 py-1 bg-gray-200 text-gray-700 rounded">待执行</span>
+                <span v-if="step.status === 'running'" class="px-2 py-1 bg-blue-500 text-white rounded animate-pulse">执行中</span>
+                <span v-if="step.status === 'completed'" class="px-2 py-1 bg-green-500 text-white rounded">完成</span>
+                <span v-if="step.status === 'error'" class="px-2 py-1 bg-red-500 text-white rounded">错误</span>
+              </div>
             </div>
 
-            <!-- 错误显示 -->
-            <div v-if="step.error" class="step-error">
-              <p>{{ step.error }}</p>
-              <button @click="retryStep(step)" class="btn-retry">重试</button>
+            <div class="step-content">
+              <p class="text-gray-600 mb-4">{{ step.description }}</p>
+
+              <!-- 步骤特定内容 -->
+              <WorkflowStepCookiesXhs
+                v-if="step.id === 'xiaohongshu-cookie'"
+                :step="step"
+                @update-step="updateStepStatus"
+                @save-state="saveWorkflowState"
+              />
+
+              <WorkflowStepZhihu
+                v-else-if="step.id === 'zhihu-get'"
+                :step="step"
+                :zhihu-url="zhihuUrl"
+                @update-step="updateStepStatus"
+                @update-zhihu-url="zhihuUrl = $event"
+                @update-content-to-polish="contentToPolish = $event"
+                @save-state="saveWorkflowState"
+              />
+
+              <WorkflowStepPolish
+                v-else-if="step.id === 'polish'"
+                :step="step"
+                :content-to-polish="contentToPolish"
+                :polish-prompt="polishPrompt"
+                @update-step="updateStepStatus"
+                @update-content-to-polish="contentToPolish = $event"
+                @update-polish-prompt="polishPrompt = $event"
+                @update-publish-data="publishData = $event"
+                @save-state="saveWorkflowState"
+              />
+
+              <WorkflowStepImageXhs
+                v-else-if="step.id === 'long-text-image'"
+                :step="step"
+                :publish-data="publishData"
+                @update-step="updateStepStatus"
+                @save-state="saveWorkflowState"
+              />
+
+              <WorkflowStepPublishXhs
+                v-else-if="step.id === 'xiaohongshu-publish'"
+                :step="step"
+                :publish-data="publishData"
+                @update-step="updateStepStatus"
+                @update-publish-data="publishData = $event"
+                @save-state="saveWorkflowState"
+              />
+
+              <div v-else class="text-center text-gray-500 py-4">
+                步骤 {{ index + 1 }}: {{ step.title }}
+              </div>
+
+              <!-- 错误信息显示 -->
+              <div v-if="step.error" class="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                <strong>错误:</strong> {{ step.error }}
+              </div>
+
+              <!-- 响应数据预览 -->
+              <div v-if="step.response && step.status === 'completed'" class="mt-4">
+                <details class="bg-gray-50 rounded p-3">
+                  <summary class="cursor-pointer text-sm font-medium text-gray-700">查看响应数据</summary>
+                  <pre class="mt-2 text-xs overflow-auto max-h-40 bg-white p-2 rounded border">{{ JSON.stringify(step.response, null, 2) }}</pre>
+                </details>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <div v-if="workflowProgress > 0" class="progress-bar">
-        <div class="progress-fill" :style="{ width: workflowProgress + '%' }"></div>
-        <span class="progress-text">{{ Math.round(workflowProgress) }}% 完成</span>
+        <div v-if="workflowProgress > 0" class="mt-6 w-full bg-white/20 rounded-full h-3 overflow-hidden relative">
+          <div class="h-full bg-white transition-all duration-300" :style="{ width: workflowProgress + '%' }"></div>
+          <span class="absolute inset-0 flex items-center justify-center text-white font-medium text-sm">{{ Math.round(workflowProgress) }}% 完成</span>
+        </div>
       </div>
     </div>
+
+    <!-- 右侧工作流控制侧边栏 -->
+    <div class="w-full lg:w-[300px] order-1 lg:order-2">
+      <div class="bg-white/95 rounded-2xl p-5 shadow-lg border border-white/20 lg:sticky lg:top-20">
+        <div class="mb-5">
+          <h3 class="m-0 text-gray-800 text-lg font-semibold">工作流控制</h3>
+        </div>
+        <div class="flex flex-col gap-3">
+          <div class="mb-5 p-4 bg-black/5 rounded-lg">
+            <h4 class="m-0 mb-3 text-gray-800 text-sm font-semibold">发布平台配置 <span class="text-red-500">*</span></h4>
+            <p class="text-xs text-gray-500 mb-3">至少选择一个平台</p>
+            <div class="flex flex-col gap-2">
+              <label class="flex items-center gap-2 cursor-pointer text-sm text-gray-600">
+                <input v-model="workflowConfig.platforms.xiaohongshu" type="checkbox" class="m-0" />
+                <span>小红书</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer text-sm text-gray-600 opacity-50">
+                <input v-model="workflowConfig.platforms.douyin" type="checkbox" class="m-0" disabled />
+                <span>抖音 (即将推出)</span>
+              </label>
+            </div>
+            <p v-if="!isAnyPlatformSelected" class="text-xs text-red-500 mt-2">请至少选择一个发布平台</p>
+          </div>
+
+          <button
+            @click="runFullWorkflow"
+            :disabled="isWorkflowRunning || !isAnyPlatformSelected"
+            class="px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white border-none rounded-lg font-medium cursor-pointer transition-all duration-200 hover:shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
+            :class="{ 'opacity-50': !isAnyPlatformSelected }"
+          >
+            {{ isWorkflowRunning ? '工作流执行中...' : '运行完整工作流' }}
+          </button>
+          <button @click="resetWorkflow" class="px-4 py-3 bg-gray-600 text-white border-none rounded-lg font-medium cursor-pointer transition-colors duration-200 hover:bg-gray-700">重置工作流</button>
+
+          <div class="mt-4 p-3 bg-white/50 rounded-lg" v-if="currentWorkflowId">
+            <p class="m-0 mb-1"><strong class="text-gray-800">当前工作流:</strong></p>
+            <p class="m-0 mb-1 text-gray-700 text-sm break-all">{{ currentWorkflowId }}</p>
+            <p class="m-0"><strong class="text-gray-800">进度:</strong> {{ Math.round(workflowProgress) }}%</p>
+          </div>
+        </div>
+      </div>
     </div>
+  </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import * as api from '../api/api'
-import ApiResponsePreview from '../components/ApiResponsePreview.vue'
-import WorkflowStepCookiesXhs from '../components/WorkflowStepCookiesXhs.vue'
-import WorkflowStepCookiesDy from '../components/WorkflowStepCookiesDy.vue'
-import WorkflowStepZhihu from '../components/WorkflowStepZhihu.vue'
-import WorkflowStepPolish from '../components/WorkflowStepPolish.vue'
-import WorkflowStepImageXhs from '../components/WorkflowStepImageXhs.vue'
-import WorkflowStepVideoEdit from '../components/WorkflowStepVideoEdit.vue'
-import WorkflowStepPublishXhs from '../components/WorkflowStepPublishXhs.vue'
-import WorkflowStepPublishDy from '../components/WorkflowStepPublishDy.vue'
-import '../assets/styles/HomeView.scss'
+import WorkflowStepCookiesXhs from '@/components/WorkflowStepCookiesXhs.vue'
+import WorkflowStepZhihu from '@/components/WorkflowStepZhihu.vue'
+import WorkflowStepPolish from '@/components/WorkflowStepPolish.vue'
+import WorkflowStepImageXhs from '@/components/WorkflowStepImageXhs.vue'
+import WorkflowStepPublishXhs from '@/components/WorkflowStepPublishXhs.vue'
 
 interface WorkflowStep {
   id: string
   title: string
   description: string
   status: 'pending' | 'running' | 'completed' | 'error'
+  endpoint?: string
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   response?: any
   error?: string
-}
-
-interface WorkflowData {
-  zhihuUrl: string
-  contentToPolish: string
-  polishPrompt: string
-  publishData: string
 }
 
 interface WorkflowConfig {
@@ -201,30 +181,65 @@ interface WorkflowConfig {
   }
 }
 
-interface WorkflowState {
-  id: string
-  steps: WorkflowStep[]
-  data: WorkflowData
-  config: WorkflowConfig
-  currentStep: number
-  progress: number
-  completed: boolean
-  timestamp: number
-}
-
-const workflowSteps = ref<WorkflowStep[]>([])
-
-const workflowData = ref<WorkflowData>({
-  zhihuUrl: '',
-  contentToPolish: '',
-  polishPrompt: '将小说内容进行适当的分行分段，并且对内容进行稍微省略，输出的文字使用场景是将文字附在图片上，作为小红书图文发布。\n\n要求：\n1. 500字左右；\n2. 不要使用 markdown 语法，不要使用如"*"等符号；\n3. 只输出正文部分，不要带有 tag、标题、作者等信息；',
-  publishData: ''
-})
+const workflowSteps = ref<WorkflowStep[]>([
+  {
+    id: 'xiaohongshu-cookie',
+    title: '获取小红书Cookie',
+    description: '获取小红书登录凭证，用于后续发布操作',
+    status: 'pending',
+    endpoint: '/cookies/xiaohongshu/get',
+    method: 'POST'
+  },
+  {
+    id: 'zhihu-get',
+    title: '知乎内容获取',
+    description: '从知乎文章URL获取原始内容',
+    status: 'pending',
+    endpoint: '/tools/zhihu-get',
+    method: 'POST'
+  },
+  {
+    id: 'polish',
+    title: '内容润色',
+    description: '使用AI对获取的内容进行润色优化',
+    status: 'pending',
+    endpoint: '/tools/polish',
+    method: 'POST'
+  },
+  {
+    id: 'long-text-image',
+    title: '长文本生成图片',
+    description: '将长文本内容转换为图片格式',
+    status: 'pending',
+    endpoint: '/tools/long-text-content',
+    method: 'POST'
+  },
+  {
+    id: 'xiaohongshu-publish',
+    title: '小红书发布',
+    description: '发布内容到小红书平台',
+    status: 'pending',
+    endpoint: '/tools/xiaohongshu',
+    method: 'POST'
+  }
+])
 
 const currentStep = ref(0)
 const isWorkflowRunning = ref(false)
 const workflowProgress = ref(0)
-const currentWorkflowId = ref<string | null>(null)
+const currentWorkflowId = ref<string | null>('workflow-test')
+
+// 工作流数据状态
+const zhihuUrl = ref('')
+const contentToPolish = ref('')
+const polishPrompt = ref(`将小说内容进行适当的分行分段，并且对内容进行稍微省略，输出的文字使用场景是将文字附在图片上，作为小红书图文发布。
+
+要求：
+1. 500字左右；
+2. 不要使用 markdown 语法，不要使用如"*"等符号；
+3. 只输出正文部分，不要带有 tag、标题、作者等信息；`)
+const publishData = ref('')
+
 const workflowConfig = ref<WorkflowConfig>({
   platforms: {
     xiaohongshu: true,
@@ -232,381 +247,104 @@ const workflowConfig = ref<WorkflowConfig>({
   }
 })
 
-// 计算属性：当前步骤
-const currentStepData = computed(() => workflowSteps.value[currentStep.value])
+// 检查是否至少选择了一个平台
+const isAnyPlatformSelected = computed(() => {
+  return workflowConfig.value.platforms.xiaohongshu || workflowConfig.value.platforms.douyin
+})
 
-// 根据配置生成工作流步骤
-const generateWorkflowSteps = (): WorkflowStep[] => {
-  const steps: WorkflowStep[] = []
-
-  // Cookie获取步骤 - 根据平台选择
-  if (workflowConfig.value.platforms.xiaohongshu) {
-    steps.push({
-      id: 'cookies-xhs',
-      title: '获取小红书Cookie',
-      description: '获取小红书的登录Cookie',
-      status: 'pending'
-    })
+const runFullWorkflow = () => {
+  if (!isAnyPlatformSelected.value) {
+    alert('请至少选择一个发布平台')
+    return
   }
 
-  if (workflowConfig.value.platforms.douyin) {
-    steps.push({
-      id: 'cookies-dy',
-      title: '获取抖音Cookie',
-      description: '获取抖音的登录Cookie',
-      status: 'pending'
-    })
-  }
+  isWorkflowRunning.value = true
+  workflowProgress.value = 0
+  currentStep.value = 0
 
-  // 知乎内容获取
-  steps.push({
-    id: 'zhihu',
-    title: '获取知乎内容',
-    description: '从知乎文章URL获取内容',
-    status: 'pending'
-  })
-
-  // 内容润色
-  steps.push({
-    id: 'polish',
-    title: '润色内容',
-    description: '对获取的内容进行AI润色',
-    status: 'pending'
-  })
-
-  // 根据平台添加后续步骤
-  if (workflowConfig.value.platforms.xiaohongshu) {
-    steps.push({
-      id: 'image-xhs',
-      title: '生成长文本图片',
-      description: '将润色后的内容转换为长文本图片',
-      status: 'pending'
-    })
-
-    steps.push({
-      id: 'publish-xhs',
-      title: '发布到小红书',
-      description: '将最终内容发布到小红书',
-      status: 'pending'
-    })
-  }
-
-  if (workflowConfig.value.platforms.douyin) {
-    steps.push({
-      id: 'video-edit',
-      title: '剪辑视频',
-      description: '使用剪映对内容进行视频剪辑',
-      status: 'pending'
-    })
-
-    steps.push({
-      id: 'publish-dy',
-      title: '发布到抖音',
-      description: '将剪辑后的视频发布到抖音',
-      status: 'pending'
-    })
-  }
-
-  return steps
+  // 执行工作流
+  executeWorkflow()
 }
 
-// 开始新工作流
-const startNewWorkflow = () => {
-  const timestamp = Date.now()
-  currentWorkflowId.value = `workflow-${timestamp}`
+const executeWorkflow = async () => {
+  for (let i = 0; i < workflowSteps.value.length; i++) {
+    const step = workflowSteps.value[i]
+    if (!step) continue
 
-  // 重置所有状态
-  workflowSteps.value = generateWorkflowSteps()
-  workflowData.value = {
-    zhihuUrl: '',
-    contentToPolish: '',
-    polishPrompt: '将小说内容进行适当的分行分段，并且对内容进行稍微省略，输出的文字使用场景是将文字附在图片上，作为小红书图文发布。\n\n要求：\n1. 500字左右；\n2. 不要使用 markdown 语法，不要使用如"*"等符号；\n3. 只输出正文部分，不要带有 tag、标题、作者等信息；',
-    publishData: ''
+    currentStep.value = i
+    step.status = 'running'
+
+    // 模拟步骤执行
+    await new Promise(resolve => setTimeout(resolve, 1000))
+
+    step.status = 'completed'
+    workflowProgress.value = ((i + 1) / workflowSteps.value.length) * 100
   }
-  workflowConfig.value = {
-    platforms: {
-      xiaohongshu: true,
-      douyin: false
-    }
-  }
+
+  isWorkflowRunning.value = false
+}
+
+const resetWorkflow = () => {
+  workflowSteps.value.forEach(step => {
+    step.status = 'pending'
+    step.error = undefined
+    step.response = undefined
+  })
   currentStep.value = 0
   workflowProgress.value = 0
   isWorkflowRunning.value = false
 
-  // 保存初始状态
+  // 重置工作流数据
+  zhihuUrl.value = ''
+  contentToPolish.value = ''
+  publishData.value = ''
+
   saveWorkflowState()
-}// 检查并获取必要的cookies
-const checkAndGetCookies = async () => {
-  const platforms = workflowConfig.value.platforms
-
-  if (platforms.xiaohongshu) {
-    try {
-      const validation = await api.validateXiaohongshuCookies()
-      if (!validation.data.valid) {
-        // Cookie无效，需要重新获取
-        await getXiaohongshuCookies()
-      }
-    } catch (error) {
-      // 验证失败，尝试获取
-      await getXiaohongshuCookies()
-    }
-  }
-
-  if (platforms.douyin) {
-    try {
-      const validation = await api.validateDouyinCookies()
-      if (!validation.data.valid) {
-        // Cookie无效，需要重新获取
-        await getDouyinCookies()
-      }
-    } catch (error) {
-      // 验证失败，尝试获取
-      await getDouyinCookies()
-    }
-  }
-}
-
-// 获取抖音Cookie
-const getDouyinCookies = async () => {
-  const step = workflowSteps.value.find(s => s.id === 'cookies-dy')
-  if (!step) return
-
-  step.status = 'running'
-  try {
-    const response = await api.getDouyinCookies({})
-    step.response = response.data
-    step.status = 'completed'
-    step.error = undefined
-    saveWorkflowState()
-  } catch (error: any) {
-    step.status = 'error'
-    step.error = error.message || '获取抖音Cookie失败'
-    saveWorkflowState()
-  }
-}
-
-// 获取小红书Cookie
-const getXiaohongshuCookies = async () => {
-  const step = workflowSteps.value.find(s => s.id === 'cookies-xhs')
-  if (!step) return
-
-  step.status = 'running'
-  try {
-    const response = await api.getXiaohongshuCookies({})
-    step.response = response.data
-    step.status = 'completed'
-    step.error = undefined
-    saveWorkflowState()
-  } catch (error: any) {
-    step.status = 'error'
-    step.error = error.message || '获取小红书Cookie失败'
-    saveWorkflowState()
-  }
-}
-
-// 执行单个步骤
-const executeStep = async (step: WorkflowStep) => {
-  step.status = 'running'
-  step.error = undefined
-
-  try {
-    let response
-    switch (step.id) {
-      case 'cookies-xhs':
-        response = await api.getXiaohongshuCookies({})
-        break
-      case 'cookies-dy':
-        response = await api.getDouyinCookies({})
-        break
-      case 'zhihu':
-        response = await api.callZhihuGetTool({ url: workflowData.value.zhihuUrl })
-        workflowData.value.contentToPolish = response.data.content?.[0]?.text || ''
-        break
-      case 'polish':
-        response = await api.callPolishTool({
-          original_text: workflowData.value.contentToPolish,
-          prompt: workflowData.value.polishPrompt
-        })
-        workflowData.value.publishData = response.data.content?.[0]?.text || ''
-        break
-      case 'image-xhs':
-        response = await api.callLongTextContentTool({
-          content: workflowData.value.publishData,
-          background_image_path: '/path/to/default/background.jpg' // TODO: 需要配置背景图片路径
-        })
-        break
-      case 'publish-xhs':
-        response = await api.callXiaohongshuTool({ data: workflowData.value.publishData })
-        break
-      case 'video-edit':
-        response = await api.editVideo({
-          content: workflowData.value.publishData,
-          workflow_id: currentWorkflowId.value
-        })
-        break
-      case 'publish-dy':
-        // TODO: 抖音发布API
-        response = { data: { success: true, message: '发布到抖音成功' } }
-        break
-    }
-
-    step.response = response?.data
-    step.status = 'completed'
-    saveWorkflowState() // 保存状态
-  } catch (error: any) {
-    step.status = 'error'
-    step.error = error.message || `${step.title}执行失败`
-    saveWorkflowState() // 保存状态
-  }
 }
 
 // 更新步骤状态
-const updateStep = (updatedStep: WorkflowStep) => {
+const updateStepStatus = (updatedStep: WorkflowStep) => {
   const index = workflowSteps.value.findIndex(s => s.id === updatedStep.id)
   if (index !== -1) {
     workflowSteps.value[index] = updatedStep
   }
 }
 
-// 更新知乎URL
-const updateZhihuUrl = (url: string) => {
-  workflowData.value.zhihuUrl = url
-}
-
-// 更新待润色内容
-const updateContentToPolish = (content: string) => {
-  workflowData.value.contentToPolish = content
-}
-
-// 更新润色提示词
-const updatePolishPrompt = (prompt: string) => {
-  workflowData.value.polishPrompt = prompt
-}
-
-// 更新发布数据
-const updatePublishData = (data: string) => {
-  workflowData.value.publishData = data
-}
-
-// 重试步骤
-const retryStep = (step: WorkflowStep) => {
-  executeStep(step)
-}
-
-// 运行完整工作流
-const runFullWorkflow = async () => {
-  isWorkflowRunning.value = true
-  workflowProgress.value = 0
-
-  // 重新生成步骤以确保使用最新配置
-  workflowSteps.value = generateWorkflowSteps()
-
-  // 首先检查并获取必要的cookies
-  await checkAndGetCookies()
-
-  for (let i = 0; i < workflowSteps.value.length; i++) {
-    const step = workflowSteps.value[i]
-    if (!step) continue
-
-    currentStep.value = i
-
-    // Cookie步骤已经处理过了，跳过
-    if (step.id.startsWith('cookies-')) {
-      continue
-    }
-
-    await executeStep(step)
-    workflowProgress.value = ((i + 1) / workflowSteps.value.length) * 100
-
-    if (step.status === 'error') {
-      break // 如果有错误，停止工作流
-    }
-  }
-
-  isWorkflowRunning.value = false
-  archiveWorkflow() // 自动归档完成的工作流
-}
-
-// 归档当前工作流
-const archiveWorkflow = () => {
-  if (!currentWorkflowId.value) return
-
-  try {
-    const saved = localStorage.getItem(currentWorkflowId.value)
-    if (saved) {
-      const state: WorkflowState = JSON.parse(saved)
-      state.completed = true
-      localStorage.setItem(currentWorkflowId.value, JSON.stringify(state))
-    }
-  } catch (error) {
-    console.error('归档工作流失败:', error)
-  }
-
-  // 开始新工作流
-  startNewWorkflow()
-}
-
-// 重置工作流
-const resetWorkflow = () => {
-  startNewWorkflow()
-}
-
-// 保存工作流状态到localStorage
+// 保存工作流状态到 localStorage
 const saveWorkflowState = () => {
-  if (!currentWorkflowId.value) return
-
-  const state: WorkflowState = {
-    id: currentWorkflowId.value,
+  const state = {
     steps: workflowSteps.value,
-    data: workflowData.value,
-    config: workflowConfig.value,
+    zhihuUrl: zhihuUrl.value,
+    contentToPolish: contentToPolish.value,
+    polishPrompt: polishPrompt.value,
+    publishData: publishData.value,
     currentStep: currentStep.value,
-    progress: workflowProgress.value,
-    completed: false,
-    timestamp: parseInt(currentWorkflowId.value.replace('workflow-', ''))
+    workflowProgress: workflowProgress.value,
+    currentWorkflowId: currentWorkflowId.value
   }
-  localStorage.setItem(currentWorkflowId.value, JSON.stringify(state))
-}// 从localStorage加载工作流状态
+  localStorage.setItem('workflow-state', JSON.stringify(state))
+}
+
+// 从 localStorage 加载工作流状态
 const loadWorkflowState = () => {
-  try {
-    // 查找所有工作流keys
-    const keys = Object.keys(localStorage).filter(key => key.startsWith('workflow-'))
-    if (keys.length === 0) {
-      startNewWorkflow()
-      return
+  const savedState = localStorage.getItem('workflow-state')
+  if (savedState) {
+    try {
+      const state = JSON.parse(savedState)
+      if (state.steps) workflowSteps.value = state.steps
+      if (state.zhihuUrl) zhihuUrl.value = state.zhihuUrl
+      if (state.contentToPolish) contentToPolish.value = state.contentToPolish
+      if (state.polishPrompt) polishPrompt.value = state.polishPrompt
+      if (state.publishData) publishData.value = state.publishData
+      if (state.currentStep !== undefined) currentStep.value = state.currentStep
+      if (state.workflowProgress !== undefined) workflowProgress.value = state.workflowProgress
+      if (state.currentWorkflowId) currentWorkflowId.value = state.currentWorkflowId
+    } catch (e) {
+      console.error('Failed to load workflow state:', e)
     }
-
-    // 找到最新的未完成工作流
-    let latestIncomplete: WorkflowState | null = null
-    for (const key of keys) {
-      const saved = localStorage.getItem(key)
-      if (saved) {
-        const state: WorkflowState = JSON.parse(saved)
-        if (!state.completed && (!latestIncomplete || state.timestamp > latestIncomplete.timestamp)) {
-          latestIncomplete = state
-        }
-      }
-    }
-
-    if (latestIncomplete) {
-      // 加载未完成的工作流
-      workflowSteps.value = latestIncomplete.steps
-      workflowData.value = latestIncomplete.data
-      workflowConfig.value = latestIncomplete.config || { platforms: { xiaohongshu: true, douyin: false } }
-      currentStep.value = latestIncomplete.currentStep
-      workflowProgress.value = latestIncomplete.progress
-      currentWorkflowId.value = latestIncomplete.id
-    } else {
-      // 没有未完成的工作流，开始新的
-      startNewWorkflow()
-    }
-  } catch (error) {
-    console.error('加载工作流状态失败:', error)
-    startNewWorkflow()
   }
 }
 
-// 组件挂载时加载状态
 onMounted(() => {
   loadWorkflowState()
 })

@@ -1,14 +1,14 @@
 <template>
   <div class="workflow-step-zhihu">
-    <div class="step-inputs">
+    <div class="flex flex-col gap-4">
       <input
         v-model="localZhihuUrl"
         type="url"
         placeholder="输入知乎文章URL"
-        class="input-field"
+        class="px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25"
         :disabled="step.status === 'running'"
       />
-      <button @click="handleFetchContent" :disabled="step.status === 'running' || !localZhihuUrl" class="btn-primary">
+      <button @click="handleFetchContent" :disabled="step.status === 'running' || !localZhihuUrl" class="px-4 py-2 bg-blue-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed">
         获取内容
       </button>
     </div>
@@ -72,36 +72,3 @@ const handleFetchContent = async () => {
   }
 }
 </script>
-
-<style scoped>
-.step-inputs {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.input-field {
-  padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 1rem;
-}
-
-.btn-primary {
-  padding: 0.5rem 1rem;
-  background-color: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background-color: #0056b3;
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-</style>

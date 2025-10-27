@@ -1,11 +1,9 @@
 <template>
   <div class="workflow-step-cookies-xhs">
-    <div class="step-inputs">
-      <div class="cookie-buttons">
-        <button @click="handleGetCookies" :disabled="step.status === 'running'" class="btn-secondary">
-          获取小红书Cookie
-        </button>
-      </div>
+    <div class="mb-4">
+      <button @click="handleGetCookies" :disabled="step.status === 'running'" class="px-4 py-2 bg-gray-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-gray-600 disabled:bg-gray-400 disabled:cursor-not-allowed">
+        获取小红书Cookie
+      </button>
     </div>
   </div>
 </template>
@@ -56,27 +54,3 @@ const handleGetCookies = async () => {
   }
 }
 </script>
-
-<style scoped>
-.cookie-buttons {
-  margin-bottom: 1rem;
-}
-
-.btn-secondary {
-  padding: 0.5rem 1rem;
-  background-color: #6c757d;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background-color: #5a6268;
-}
-
-.btn-secondary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-</style>

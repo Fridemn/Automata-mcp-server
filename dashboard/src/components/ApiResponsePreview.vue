@@ -1,34 +1,33 @@
 <template>
   <div class="api-response-preview">
-    <div v-if="response && response.content && response.content.length > 0" class="response-content">
-      <div v-for="(item, index) in response.content" :key="index" class="response-item">
+    <div v-if="response && response.content && response.content.length > 0" class="space-y-4">
+      <div v-for="(item, index) in response.content" :key="index" class="border border-gray-200 rounded-lg p-4">
         <div v-if="item.type === 'text' && item.text" class="text-content">
-          <pre v-if="isJsonString(item.text)" class="json-content">{{ formatJson(item.text) }}</pre>
-          <div v-else class="plain-text">{{ item.text }}</div>
+          <pre v-if="isJsonString(item.text)" class="bg-gray-100 p-3 rounded text-sm overflow-x-auto">{{ formatJson(item.text) }}</pre>
+          <div v-else class="text-gray-800 whitespace-pre-wrap">{{ item.text }}</div>
         </div>
         <div v-else-if="item.type === 'image'" class="image-content">
-          <img :src="item.image_url" :alt="item.description || 'Response image'" />
+          <img :src="item.image_url" :alt="item.description || 'Response image'" class="max-w-full h-auto rounded border" />
         </div>
         <div v-else class="unknown-content">
-          <strong>{{ item.type }}:</strong>
-          <pre>{{ JSON.stringify(item, null, 2) }}</pre>
+          <strong class="text-gray-700">{{ item.type }}:</strong>
+          <pre class="bg-gray-100 p-3 rounded text-sm overflow-x-auto mt-2">{{ JSON.stringify(item, null, 2) }}</pre>
         </div>
       </div>
     </div>
-    <div v-else-if="response && response.error" class="error-content">
-      <div class="error-message">
+    <div v-else-if="response && response.error" class="p-4 bg-red-50 border border-red-200 rounded-lg">
+      <div class="text-red-800">
         <strong>错误:</strong> {{ response.error }}
       </div>
     </div>
-    <div v-else class="no-content">
-      <span class="no-data">暂无响应数据</span>
+    <div v-else class="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center">
+      <span class="text-gray-500">暂无响应数据</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import '../assets/styles/ApiResponsePreview.scss'
 
 interface ResponseItem {
   type: string

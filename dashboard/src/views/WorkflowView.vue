@@ -1,8 +1,8 @@
 <template>
-  <div class="workflow">
-    <h1>工作流</h1>
-    <p>此工作流将执行以下步骤：</p>
-    <ol>
+  <div class="min-h-[calc(100vh-60px)] p-5 bg-gradient-to-br from-blue-400 to-purple-600 font-['Segoe_UI',_Tahoma,_Geneva,_Verdana,_sans-serif] flex flex-col">
+    <h1 class="text-3xl font-bold text-white mb-4">工作流</h1>
+    <p class="text-white/80 mb-6">此工作流将执行以下步骤：</p>
+    <ol class="text-white/90 mb-8 space-y-1">
       <li>获取抖音或小红书的登录cookie</li>
       <li>输入知乎链接并获取内容</li>
       <li>对获取的内容进行润色</li>
@@ -10,57 +10,67 @@
       <li>发布到小红书</li>
     </ol>
 
-    <div class="step">
-      <h2>步骤 1: 获取Cookie</h2>
-      <button @click="getDouyinCookies">获取抖音Cookie</button>
-      <button @click="getXiaohongshuCookies">获取小红书Cookie</button>
-      <div v-if="cookiesResponse" class="response">
+    <div class="bg-white/95 backdrop-blur-[10px] rounded-2xl p-6 mb-6 shadow-lg border border-white/20">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">步骤 1: 获取Cookie</h2>
+      <div class="flex gap-4 mb-4">
+        <button @click="getDouyinCookies" class="px-4 py-2 bg-blue-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-blue-600">获取抖音Cookie</button>
+        <button @click="getXiaohongshuCookies" class="px-4 py-2 bg-gray-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-gray-600">获取小红书Cookie</button>
+      </div>
+      <div v-if="cookiesResponse" class="mt-4">
         <ApiResponsePreview :response="cookiesResponse" />
       </div>
     </div>
 
-    <div class="step">
-      <h2>步骤 2: 获取知乎内容</h2>
-      <input v-model="zhihuUrl" type="text" placeholder="输入知乎URL" />
-      <button @click="fetchZhihuContent">获取内容</button>
-      <div v-if="zhihuResponse" class="response">
+    <div class="bg-white/95 backdrop-blur-[10px] rounded-2xl p-6 mb-6 shadow-lg border border-white/20">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">步骤 2: 获取知乎内容</h2>
+      <div class="flex flex-col gap-4">
+        <input v-model="zhihuUrl" type="text" placeholder="输入知乎URL" class="px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25" />
+        <button @click="fetchZhihuContent" class="px-4 py-2 bg-blue-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-blue-600">获取内容</button>
+      </div>
+      <div v-if="zhihuResponse" class="mt-4">
         <ApiResponsePreview :response="zhihuResponse" />
       </div>
     </div>
 
-    <div class="step">
-      <h2>步骤 3: 润色内容</h2>
-      <textarea v-model="contentToPolish" placeholder="要润色的内容"></textarea>
-      <textarea v-model="polishPrompt" placeholder="润色提示词"></textarea>
-      <button @click="polishContent">润色内容</button>
-      <div v-if="polishResponse" class="response">
+    <div class="bg-white/95 backdrop-blur-[10px] rounded-2xl p-6 mb-6 shadow-lg border border-white/20">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">步骤 3: 润色内容</h2>
+      <div class="flex flex-col gap-4">
+        <textarea v-model="contentToPolish" placeholder="要润色的内容" class="px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 min-h-[100px] resize-vertical"></textarea>
+        <textarea v-model="polishPrompt" placeholder="润色提示词" class="px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 min-h-[100px] resize-vertical"></textarea>
+        <button @click="polishContent" class="px-4 py-2 bg-blue-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-blue-600">润色内容</button>
+      </div>
+      <div v-if="polishResponse" class="mt-4">
         <ApiResponsePreview :response="polishResponse" />
       </div>
     </div>
 
-    <div class="step">
-      <h2>步骤 4: 生成长文本图片</h2>
-      <button @click="generateLongTextImage">生成图片</button>
-      <div v-if="imageResponse" class="response">
+    <div class="bg-white/95 backdrop-blur-[10px] rounded-2xl p-6 mb-6 shadow-lg border border-white/20">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">步骤 4: 生成长文本图片</h2>
+      <button @click="generateLongTextImage" class="px-4 py-2 bg-blue-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-blue-600">生成图片</button>
+      <div v-if="imageResponse" class="mt-4">
         <ApiResponsePreview :response="imageResponse" />
       </div>
     </div>
 
-    <div class="step">
-      <h2>步骤 5: 发布到小红书</h2>
-      <textarea v-model="publishData" placeholder="要发布的数据"></textarea>
-      <button @click="publishToXiaohongshu">发布</button>
-      <div v-if="publishResponse" class="response">
+    <div class="bg-white/95 backdrop-blur-[10px] rounded-2xl p-6 mb-6 shadow-lg border border-white/20">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">步骤 5: 发布到小红书</h2>
+      <div class="flex flex-col gap-4">
+        <textarea v-model="publishData" placeholder="要发布的数据" class="px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 min-h-[100px] resize-vertical"></textarea>
+        <button @click="publishToXiaohongshu" class="px-4 py-2 bg-blue-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-blue-600">发布</button>
+      </div>
+      <div v-if="publishResponse" class="mt-4">
         <ApiResponsePreview :response="publishResponse" />
       </div>
     </div>
 
-    <div class="step">
-      <h2>运行完整工作流</h2>
-      <button @click="runFullWorkflow">运行工作流</button>
-      <button @click="archiveWorkflow">归档工作流</button>
-      <div v-if="workflowStatus" class="response">
-        <pre>{{ workflowStatus }}</pre>
+    <div class="bg-white/95 backdrop-blur-[10px] rounded-2xl p-6 shadow-lg border border-white/20">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">运行完整工作流</h2>
+      <div class="flex gap-4 mb-4">
+        <button @click="runFullWorkflow" class="px-4 py-2 bg-green-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-green-600">运行工作流</button>
+        <button @click="archiveWorkflow" class="px-4 py-2 bg-gray-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-gray-600">归档工作流</button>
+      </div>
+      <div v-if="workflowStatus" class="mt-4 p-4 bg-gray-50 rounded">
+        <pre class="text-sm">{{ workflowStatus }}</pre>
       </div>
     </div>
   </div>
@@ -70,7 +80,6 @@
 import { ref, onMounted } from 'vue';
 import * as api from '../api/api';
 import ApiResponsePreview from '../components/ApiResponsePreview.vue';
-import '../assets/styles/WorkflowView.scss'
 
 interface WorkflowData {
   zhihuUrl: string

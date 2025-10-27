@@ -1,21 +1,22 @@
 <template>
-  <div class="tools">
-    <h1>工具</h1>
-    <div v-for="tool in tools" :key="tool.name" class="tool-section">
-      <h2>{{ tool.name }}</h2>
-      <form @submit.prevent="callTool(tool)">
-        <div v-for="field in tool.fields" :key="field.name">
-          <label>{{ field.label }}:</label>
-          <input v-if="field.type === 'text' || field.type === 'number'" :type="field.type" v-model="tool.data[field.name]" :placeholder="field.placeholder" />
-          <textarea v-else-if="field.type === 'textarea'" v-model="(tool.data[field.name] as string)" :placeholder="field.placeholder"></textarea>
-          <div v-else-if="field.type === 'checkbox'">
-            <input type="checkbox" v-model="tool.data[field.name]" />
+  <div class="min-h-[calc(100vh-60px)] p-5 bg-gradient-to-br from-blue-400 to-purple-600 font-['Segoe_UI',_Tahoma,_Geneva,_Verdana,_sans-serif] flex flex-col">
+    <h1 class="text-3xl font-bold text-white mb-8">工具</h1>
+    <div v-for="tool in tools" :key="tool.name" class="bg-white/95 backdrop-blur-[10px] rounded-2xl p-6 mb-6 shadow-lg border border-white/20">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">{{ tool.name }}</h2>
+      <form @submit.prevent="callTool(tool)" class="space-y-4">
+        <div v-for="field in tool.fields" :key="field.name" class="flex flex-col gap-2">
+          <label class="font-medium text-gray-700">{{ field.label }}:</label>
+          <input v-if="field.type === 'text' || field.type === 'number'" :type="field.type" v-model="tool.data[field.name]" :placeholder="field.placeholder" class="px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25" />
+          <textarea v-else-if="field.type === 'textarea'" v-model="(tool.data[field.name] as string)" :placeholder="field.placeholder" class="px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 min-h-[100px] resize-vertical"></textarea>
+          <div v-else-if="field.type === 'checkbox'" class="flex items-center gap-2">
+            <input type="checkbox" v-model="tool.data[field.name]" class="w-4 h-4" />
+            <span class="text-gray-700">{{ field.label }}</span>
           </div>
         </div>
-        <button type="submit">调用 {{ tool.name }}</button>
+        <button type="submit" class="px-4 py-2 bg-blue-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-blue-600">调用 {{ tool.name }}</button>
       </form>
-      <div v-if="tool.response" class="response">
-        <h3>响应:</h3>
+      <div v-if="tool.response" class="mt-6 p-4 bg-gray-50 rounded-lg">
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">响应:</h3>
         <ApiResponsePreview :response="tool.response" />
       </div>
     </div>
@@ -26,7 +27,6 @@
 import { ref } from 'vue';
 import * as api from '../api/api';
 import ApiResponsePreview from '../components/ApiResponsePreview.vue';
-import '../assets/styles/ToolsView.scss'
 
 interface ToolField {
   name: string;

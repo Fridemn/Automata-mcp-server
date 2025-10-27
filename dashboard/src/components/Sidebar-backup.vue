@@ -75,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 
 interface Config {
   backendUrl: string
@@ -93,6 +93,10 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
 }>()
+
+watch(() => props.isOpen, (newVal) => {
+  console.log('Sidebar isOpen changed to:', newVal)
+})
 
 const config = ref<Config>({
   backendUrl: 'http://localhost:8000',

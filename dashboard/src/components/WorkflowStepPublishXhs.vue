@@ -1,13 +1,13 @@
 <template>
   <div class="workflow-step-publish-xhs">
-    <div class="step-inputs">
+    <div class="flex flex-col gap-4">
       <textarea
         v-model="localPublishData"
         placeholder="要发布的内容"
-        class="textarea-field"
+        class="px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 min-h-[100px] resize-vertical"
         :disabled="step.status === 'running'"
       ></textarea>
-      <button @click="handlePublish" :disabled="step.status === 'running' || !localPublishData" class="btn-primary">
+      <button @click="handlePublish" :disabled="step.status === 'running' || !localPublishData" class="px-4 py-2 bg-blue-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed">
         发布到小红书
       </button>
     </div>
@@ -69,38 +69,3 @@ const handlePublish = async () => {
   }
 }
 </script>
-
-<style scoped>
-.step-inputs {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.textarea-field {
-  padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 1rem;
-  min-height: 100px;
-  resize: vertical;
-}
-
-.btn-primary {
-  padding: 0.5rem 1rem;
-  background-color: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background-color: #0056b3;
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-</style>

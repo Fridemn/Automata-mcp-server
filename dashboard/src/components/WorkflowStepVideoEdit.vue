@@ -1,7 +1,7 @@
 <template>
   <div class="workflow-step-video-edit">
-    <div class="step-inputs">
-      <button @click="handleEditVideo" :disabled="step.status === 'running'" class="btn-primary">
+    <div class="flex flex-col gap-4">
+      <button @click="handleEditVideo" :disabled="step.status === 'running'" class="px-4 py-2 bg-blue-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed">
         开始视频剪辑
       </button>
     </div>
@@ -59,29 +59,3 @@ const handleEditVideo = async () => {
   }
 }
 </script>
-
-<style scoped>
-.step-inputs {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.btn-primary {
-  padding: 0.5rem 1rem;
-  background-color: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background-color: #0056b3;
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-</style>
