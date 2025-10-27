@@ -226,14 +226,20 @@ const executeStep = async (step: WorkflowStep) => {
     switch (step.id) {
       case 'zhihu':
         response = await api.callZhihuGetTool({ url: workflowData.value.zhihuUrl })
-        workflowData.value.contentToPolish = response.data.content || ''
+        workflowData.value.contentToPolish = response.data.content?.[0]?.text || ''
         break
       case 'polish':
-        response = await api.callPolishTool({ content: workflowData.value.contentToPolish })
-        workflowData.value.publishData = response.data.polished || ''
+        response = await api.callPolishTool({
+          original_text: workflowData.value.contentToPolish,
+          prompt: '请润色这篇文章，使其更加优美流畅，适合在社交媒体上发布。'
+        })
+        workflowData.value.publishData = response.data.content?.[0]?.text || ''
         break
       case 'image':
-        response = await api.callLongTextContentTool({ text: workflowData.value.publishData })
+        response = await api.callLongTextContentTool({
+          content: workflowData.value.publishData,
+          background_image_path: '/path/to/default/background.jpg' // TODO: 需要配置背景图片路径
+        })
         break
       case 'publish':
         response = await api.callXiaohongshuTool({ data: workflowData.value.publishData })

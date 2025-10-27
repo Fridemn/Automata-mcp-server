@@ -8,3 +8,6 @@ reference/
 .env
 uv.lock
 poetry.lock
+
+openapi.json
+data/dist/

@@ -9,6 +9,7 @@ import uvicorn
 import yaml
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 from loguru import logger
@@ -41,6 +42,16 @@ class AutomataMCPServer:
             description="A centralized MCP server using FastAPI with plugin architecture",
             version="1.0.0",
         )
+
+        # Add CORS middleware
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],  # Allows all origins
+            allow_credentials=True,
+            allow_methods=["*"],  # Allows all methods
+            allow_headers=["*"],  # Allows all headers
+        )
+
         self.tools = {}
         self.api_key = os.getenv("AUTOMATA_API_KEY")  # 从环境变量获取API key
         self.host = os.getenv("HOST")

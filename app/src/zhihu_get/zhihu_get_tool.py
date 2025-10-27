@@ -112,7 +112,6 @@ class ZhihuGetTool(BaseMCPTool):
 
         # Use regex to find the first div with class starting with "index-module-root"
         # Pattern: <div class="index-module-root..." or <div class='index-module-root...'
-        print(html)
         div_pattern = r'<div[^>]*class=["\']index-module-root[^"\']*["\'][^>]*>'
 
         match = regex_module.search(div_pattern, html)

@@ -100,7 +100,7 @@ const fetchZhihuContent = async () => {
   try {
     const response = await api.callZhihuGetTool({ url: zhihuUrl.value });
     zhihuResponse.value = response.data;
-    contentToPolish.value = response.data.content || '';
+    contentToPolish.value = response.data.content?.[0]?.text || '';
   } catch (error: unknown) {
     zhihuResponse.value = { error: (error as Error).message };
   }
@@ -108,9 +108,12 @@ const fetchZhihuContent = async () => {
 
 const polishContent = async () => {
   try {
-    const response = await api.callPolishTool({ content: contentToPolish.value });
+    const response = await api.callPolishTool({
+      original_text: contentToPolish.value,
+      prompt: '请润色这篇文章，使其更加优美流畅，适合在社交媒体上发布。'
+    });
     polishResponse.value = response.data;
-    publishData.value = response.data.polished || '';
+    publishData.value = response.data.content?.[0]?.text || '';
   } catch (error: unknown) {
     polishResponse.value = { error: (error as Error).message };
   }

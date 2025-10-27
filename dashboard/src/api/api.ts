@@ -2,8 +2,11 @@ import axios from 'axios';
 
 // Create axios instance with base URL
 const api = axios.create({
-  baseURL: 'http://localhost:8000', // Adjust if backend port is different
+  baseURL: 'http://0.0.0.0:8000', // Match backend host
   timeout: 10000,
+  headers: {
+    'X-API-Key': '0d000721', // API key from .env file
+  },
 });
 
 // API functions for each endpoint
@@ -11,8 +14,30 @@ const api = axios.create({
 // Tool endpoints
 export const callDouyinTool = (data: Record<string, unknown>) => api.post('/tools/douyin', data);
 export const callFetchTool = (data: Record<string, unknown>) => api.post('/tools/fetch', data);
-export const callLongTextContentTool = (data: Record<string, unknown>) => api.post('/tools/long-text-content', data);
-export const callPolishTool = (data: Record<string, unknown>) => api.post('/tools/polish', data);
+export const callLongTextContentTool = (data: Record<string, unknown>) => {
+  // Use form data for this endpoint
+  const formData = new FormData();
+  Object.entries(data).forEach(([key, value]) => {
+    formData.append(key, value as string);
+  });
+  return api.post('/tools/long-text-content', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+};
+export const callPolishTool = (data: Record<string, unknown>) => {
+  // Use form data for this endpoint
+  const formData = new FormData();
+  Object.entries(data).forEach(([key, value]) => {
+    formData.append(key, value as string);
+  });
+  return api.post('/tools/polish', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+};
 export const callXiaohongshuTool = (data: Record<string, unknown>) => api.post('/tools/xiaohongshu', data);
 export const callZhihuGetTool = (data: Record<string, unknown>) => api.post('/tools/zhihu_get', data);
 
