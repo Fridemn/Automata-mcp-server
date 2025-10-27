@@ -62,25 +62,25 @@
                 @update-step="updateStepStatus"
                 @update-content-to-polish="contentToPolish = $event"
                 @update-polish-prompt="polishPrompt = $event"
-                @update-publish-data="publishData = $event"
+                @update-publish-data="polishedContent = $event"
                 @save-state="saveWorkflowState"
               />
 
               <WorkflowStepImageXhs
                 v-else-if="step.id === 'long-text-image'"
                 :step="step"
-                :publish-data="publishData"
+                :publish-data="polishedContent"
                 @update-step="updateStepStatus"
-                @update-publish-data="publishData = $event"
+                @update-publish-data="imagePath = $event"
                 @save-state="saveWorkflowState"
               />
 
               <WorkflowStepPublishXhs
                 v-else-if="step.id === 'xiaohongshu-publish'"
                 :step="step"
-                :publish-data="publishData"
+                :publish-data="imagePath"
                 @update-step="updateStepStatus"
-                @update-publish-data="publishData = $event"
+                @update-publish-data="imagePath = $event"
                 @save-state="saveWorkflowState"
               />
 
@@ -239,7 +239,8 @@ const polishPrompt = ref(`将小说内容进行适当的分行分段，并且对
 1. 500字左右；
 2. 不要使用 markdown 语法，不要使用如"*"等符号；
 3. 只输出正文部分，不要带有 tag、标题、作者等信息；`)
-const publishData = ref('')
+const polishedContent = ref('') // 润色后的内容，用于生成图片
+const imagePath = ref('') // 生成的图片路径，用于发布
 
 const workflowConfig = ref<WorkflowConfig>({
   platforms: {
@@ -298,7 +299,8 @@ const resetWorkflow = () => {
   // 重置工作流数据
   zhihuUrl.value = ''
   contentToPolish.value = ''
-  publishData.value = ''
+  polishedContent.value = ''
+  imagePath.value = ''
 
   saveWorkflowState()
 }
@@ -318,7 +320,8 @@ const saveWorkflowState = () => {
     zhihuUrl: zhihuUrl.value,
     contentToPolish: contentToPolish.value,
     polishPrompt: polishPrompt.value,
-    publishData: publishData.value,
+    polishedContent: polishedContent.value,
+    imagePath: imagePath.value,
     currentStep: currentStep.value,
     workflowProgress: workflowProgress.value,
     currentWorkflowId: currentWorkflowId.value
@@ -336,7 +339,8 @@ const loadWorkflowState = () => {
       if (state.zhihuUrl) zhihuUrl.value = state.zhihuUrl
       if (state.contentToPolish) contentToPolish.value = state.contentToPolish
       if (state.polishPrompt) polishPrompt.value = state.polishPrompt
-      if (state.publishData) publishData.value = state.publishData
+      if (state.polishedContent) polishedContent.value = state.polishedContent
+      if (state.imagePath) imagePath.value = state.imagePath
       if (state.currentStep !== undefined) currentStep.value = state.currentStep
       if (state.workflowProgress !== undefined) workflowProgress.value = state.workflowProgress
       if (state.currentWorkflowId) currentWorkflowId.value = state.currentWorkflowId
