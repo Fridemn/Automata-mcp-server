@@ -71,6 +71,7 @@
                 :step="step"
                 :publish-data="publishData"
                 @update-step="updateStepStatus"
+                @update-publish-data="publishData = $event"
                 @save-state="saveWorkflowState"
               />
 

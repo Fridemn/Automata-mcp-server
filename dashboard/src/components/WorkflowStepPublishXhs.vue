@@ -1,13 +1,11 @@
 <template>
   <div class="workflow-step-publish-xhs">
     <div class="flex flex-col gap-4">
-      <textarea
-        v-model="localPublishData"
-        placeholder="要发布的内容"
-        class="px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 min-h-[100px] resize-vertical"
-        :disabled="step.status === 'running'"
-      ></textarea>
-      <button @click="handlePublish" :disabled="step.status === 'running' || !localPublishData" class="px-4 py-2 bg-blue-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed">
+      <div v-if="props.publishData" class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">生成的图片路径</label>
+        <p class="text-sm text-gray-600">{{ props.publishData }}</p>
+      </div>
+      <button @click="handlePublish" :disabled="step.status === 'running' || !props.publishData" class="px-4 py-2 bg-blue-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed">
         发布到小红书
       </button>
     </div>
@@ -15,7 +13,7 @@
 </template>
 
 <script setup lang="ts">
-import { defineProps, defineEmits, ref, watch } from 'vue'
+import { defineProps, defineEmits } from 'vue'
 import * as api from '@/api/api'
 
 interface WorkflowStep {
@@ -38,25 +36,19 @@ const emit = defineEmits<{
   saveState: []
 }>()
 
-const localPublishData = ref(props.publishData)
-
-watch(() => props.publishData, (newData) => {
-  localPublishData.value = newData
-})
-
 const handlePublish = async () => {
   const updatedStep = { ...props.step, status: 'running' as const, error: undefined }
   emit('updateStep', updatedStep)
 
   try {
-    const response = await api.callXiaohongshuTool({ data: localPublishData.value })
+    const response = await api.callXiaohongshuTool({ image_path: props.publishData })
     const completedStep = {
       ...updatedStep,
       response: response.data,
       status: 'completed' as const
     }
     emit('updateStep', completedStep)
-    emit('updatePublishData', localPublishData.value)
+    emit('updatePublishData', props.publishData)
     emit('saveState')
   } catch (error: any) {
     const errorStep = {

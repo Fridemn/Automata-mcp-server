@@ -19,6 +19,7 @@ from mcp.types import (
     Tool,
 )
 from pydantic import BaseModel, Field
+from fastapi import UploadFile, File
 
 from app.base_tool import BaseMCPTool
 
@@ -851,7 +852,7 @@ class LongTextContent:
 
 class LongTextContentParams(BaseModel):
     content: str = Field(description="长文本内容")
-    background_image_path: str = Field(description="背景图片文件路径")
+    background_image: UploadFile = File(description="背景图片文件")
     output_folder_path: Optional[str] = Field(
         default=None, description="输出目录路径，如果不提供则使用临时目录"
     )
@@ -898,14 +899,13 @@ class LongTextContentTool(BaseMCPTool):
         except ValueError as e:
             raise McpError(ErrorData(code=INVALID_PARAMS, message=str(e)))
 
-        # 验证背景图片文件是否存在
-        if not os.path.exists(args.background_image_path):
-            raise McpError(
-                ErrorData(
-                    code=INVALID_PARAMS,
-                    message=f"背景图片文件不存在: {args.background_image_path}",
-                )
-            )
+        # 保存上传的背景图片到临时文件
+        temp_image_path = (
+            f"data/temp/{int(time.time())}_{args.background_image.filename}"
+        )
+        os.makedirs(os.path.dirname(temp_image_path), exist_ok=True)
+        with open(temp_image_path, "wb") as buffer:
+            shutil.copyfileobj(args.background_image.file, buffer)
 
         # 创建输出目录
         if args.output_folder_path is None:
@@ -914,9 +914,9 @@ class LongTextContentTool(BaseMCPTool):
         os.makedirs(args.output_folder_path, exist_ok=True)
 
         # 复制背景图片到输出目录
-        image_filename = os.path.basename(args.background_image_path)
+        image_filename = os.path.basename(temp_image_path)
         dest_image_path = os.path.join(args.output_folder_path, image_filename)
-        shutil.copy(args.background_image_path, dest_image_path)
+        shutil.copy(temp_image_path, dest_image_path)
 
         # 创建args对象
         namespace_args = Namespace(

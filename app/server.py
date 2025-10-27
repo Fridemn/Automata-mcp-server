@@ -255,7 +255,7 @@ class AutomataMCPServer:
             if use_form_flag:
                 # For form data, create a dynamic function with proper Form parameters
                 import inspect
-                from fastapi import Form
+                from fastapi import Form, File, UploadFile
 
                 # Get the fields from the params class
                 fields = p_class.model_fields
@@ -264,12 +264,21 @@ class AutomataMCPServer:
                 params = []
 
                 for field_name, field_info in fields.items():
+                    # Check if the field is UploadFile
+                    if field_info.annotation == UploadFile or (
+                        hasattr(field_info.annotation, "__origin__")
+                        and field_info.annotation.__origin__ == UploadFile
+                    ):
+                        form_func = File
+                    else:
+                        form_func = Form
+
                     if field_info.is_required():
                         params.append(
                             inspect.Parameter(
                                 field_name,
                                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                                default=Form(
+                                default=form_func(
                                     ..., description=field_info.description or ""
                                 ),
                             )
@@ -279,7 +288,7 @@ class AutomataMCPServer:
                             inspect.Parameter(
                                 field_name,
                                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                                default=Form(
+                                default=form_func(
                                     field_info.default,
                                     description=field_info.description or "",
                                 ),
