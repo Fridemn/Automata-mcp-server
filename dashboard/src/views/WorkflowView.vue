@@ -58,6 +58,7 @@
     <div class="step">
       <h2>运行完整工作流</h2>
       <button @click="runFullWorkflow">运行工作流</button>
+      <button @click="archiveWorkflow">归档工作流</button>
       <div v-if="workflowStatus" class="response">
         <pre>{{ workflowStatus }}</pre>
       </div>
@@ -66,9 +67,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import * as api from '../api/api';
 import ApiResponsePreview from '../components/ApiResponsePreview.vue';
+
+interface WorkflowData {
+  zhihuUrl: string
+  contentToPolish: string
+  polishPrompt: string
+  publishData: string
+}
+
+interface WorkflowState {
+  id: string
+  data: WorkflowData
+  completed: boolean
+  timestamp: number
+}
 
 const zhihuUrl = ref('');
 const contentToPolish = ref('');
@@ -80,11 +95,110 @@ const polishResponse = ref<unknown>(null);
 const imageResponse = ref<unknown>(null);
 const publishResponse = ref<unknown>(null);
 const workflowStatus = ref('');
+const currentWorkflowId = ref<string | null>(null);
+
+// 开始新工作流
+const startNewWorkflow = () => {
+  const timestamp = Date.now()
+  currentWorkflowId.value = `workflow-${timestamp}`
+
+  zhihuUrl.value = ''
+  contentToPolish.value = ''
+  polishPrompt.value = '将小说内容进行适当的分行分段，并且对内容进行稍微省略，输出的文字使用场景是将文字附在图片上，作为小红书图文发布。\n\n要求：\n1. 500字左右；\n2. 不要使用 markdown 语法，不要使用如"*"等符号；\n3. 只输出正文部分，不要带有 tag、标题、作者等信息；'
+  publishData.value = ''
+  cookiesResponse.value = null
+  zhihuResponse.value = null
+  polishResponse.value = null
+  imageResponse.value = null
+  publishResponse.value = null
+  workflowStatus.value = ''
+
+  saveWorkflowState()
+}
+
+// 保存工作流状态
+const saveWorkflowState = () => {
+  if (!currentWorkflowId.value) return
+
+  const data: WorkflowData = {
+    zhihuUrl: zhihuUrl.value,
+    contentToPolish: contentToPolish.value,
+    polishPrompt: polishPrompt.value,
+    publishData: publishData.value
+  }
+
+  const state: WorkflowState = {
+    id: currentWorkflowId.value,
+    data,
+    completed: false,
+    timestamp: parseInt(currentWorkflowId.value.replace('workflow-', ''))
+  }
+  localStorage.setItem(currentWorkflowId.value, JSON.stringify(state))
+}
+
+// 加载工作流状态
+const loadWorkflowState = () => {
+  try {
+    const keys = Object.keys(localStorage).filter(key => key.startsWith('workflow-'))
+    if (keys.length === 0) {
+      startNewWorkflow()
+      return
+    }
+
+    let latestIncomplete: WorkflowState | null = null
+    for (const key of keys) {
+      const saved = localStorage.getItem(key)
+      if (saved) {
+        const state: WorkflowState = JSON.parse(saved)
+        if (!state.completed && (!latestIncomplete || state.timestamp > latestIncomplete.timestamp)) {
+          latestIncomplete = state
+        }
+      }
+    }
+
+    if (latestIncomplete) {
+      zhihuUrl.value = latestIncomplete.data.zhihuUrl
+      contentToPolish.value = latestIncomplete.data.contentToPolish
+      polishPrompt.value = latestIncomplete.data.polishPrompt
+      publishData.value = latestIncomplete.data.publishData
+      currentWorkflowId.value = latestIncomplete.id
+    } else {
+      startNewWorkflow()
+    }
+  } catch (error) {
+    console.error('加载工作流状态失败:', error)
+    startNewWorkflow()
+  }
+}
+
+// 归档工作流
+const archiveWorkflow = () => {
+  if (!currentWorkflowId.value) return
+
+  try {
+    const saved = localStorage.getItem(currentWorkflowId.value)
+    if (saved) {
+      const state: WorkflowState = JSON.parse(saved)
+      state.completed = true
+      localStorage.setItem(currentWorkflowId.value, JSON.stringify(state))
+    }
+  } catch (error) {
+    console.error('归档工作流失败:', error)
+  }
+
+  startNewWorkflow()
+}
+
+// 组件挂载时加载
+onMounted(() => {
+  loadWorkflowState()
+})
 
 const getDouyinCookies = async () => {
   try {
     const response = await api.getDouyinCookies({});
     cookiesResponse.value = response.data;
+    saveWorkflowState()
   } catch (error: unknown) {
     cookiesResponse.value = { error: (error as Error).message };
   }
@@ -94,6 +208,7 @@ const getXiaohongshuCookies = async () => {
   try {
     const response = await api.getXiaohongshuCookies({});
     cookiesResponse.value = response.data;
+    saveWorkflowState()
   } catch (error: unknown) {
     cookiesResponse.value = { error: (error as Error).message };
   }
@@ -104,6 +219,7 @@ const fetchZhihuContent = async () => {
     const response = await api.callZhihuGetTool({ url: zhihuUrl.value });
     zhihuResponse.value = response.data;
     contentToPolish.value = response.data.content?.[0]?.text || '';
+    saveWorkflowState()
   } catch (error: unknown) {
     zhihuResponse.value = { error: (error as Error).message };
   }
@@ -117,6 +233,7 @@ const polishContent = async () => {
     });
     polishResponse.value = response.data;
     publishData.value = response.data.content?.[0]?.text || '';
+    saveWorkflowState()
   } catch (error: unknown) {
     polishResponse.value = { error: (error as Error).message };
   }
@@ -126,6 +243,7 @@ const generateLongTextImage = async () => {
   try {
     const response = await api.callLongTextContentTool({ text: publishData.value });
     imageResponse.value = response.data;
+    saveWorkflowState()
   } catch (error: unknown) {
     imageResponse.value = { error: (error as Error).message };
   }
@@ -135,6 +253,7 @@ const publishToXiaohongshu = async () => {
   try {
     const response = await api.callXiaohongshuTool({ data: publishData.value });
     publishResponse.value = response.data;
+    saveWorkflowState()
   } catch (error: unknown) {
     publishResponse.value = { error: (error as Error).message };
   }
@@ -163,6 +282,7 @@ const runFullWorkflow = async () => {
     await publishToXiaohongshu();
 
     workflowStatus.value += '\n工作流成功完成!';
+    archiveWorkflow() // 归档完成的工作流
   } catch (error: unknown) {
     workflowStatus.value += `\n错误: ${(error as Error).message}`;
   }

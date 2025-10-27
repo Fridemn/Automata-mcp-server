@@ -1,18 +1,42 @@
 <template>
   <div class="workflow-home">
-    <div class="workflow-container">
-      <div class="workflow-header">
-        <h1>智能内容发布工作流</h1>
-        <p>自动化从知乎获取内容到发布到小红书的完整流程</p>
+    <!-- 左侧侧边栏 -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h3>工作流控制</h3>
       </div>
+      <div class="sidebar-content">
+        <button @click="runFullWorkflow" :disabled="isWorkflowRunning" class="btn-workflow">
+          {{ isWorkflowRunning ? '工作流执行中...' : '运行完整工作流' }}
+        </button>
+        <button @click="resetWorkflow" class="btn-reset">重置工作流</button>
+        <button @click="archiveWorkflow" class="btn-archive">归档工作流</button>
+        <button @click="saveWorkflowState" class="btn-save">保存状态</button>
+        <button @click="loadWorkflowState" class="btn-load">恢复状态</button>
 
-      <div class="workflow-steps">
-        <div
-          v-for="(step, index) in workflowSteps"
-          :key="step.id"
-          class="step-card"
-          :class="{ active: currentStep === index, completed: step.status === 'completed', error: step.status === 'error' }"
-        >
+        <div class="workflow-info" v-if="currentWorkflowId">
+          <p><strong>当前工作流:</strong></p>
+          <p>{{ currentWorkflowId }}</p>
+          <p><strong>进度:</strong> {{ Math.round(workflowProgress) }}%</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主内容区域 -->
+    <div class="main-content">
+      <div class="workflow-container">
+        <div class="workflow-header">
+          <h1>智能内容发布工作流</h1>
+          <p>自动化从知乎获取内容到发布到小红书的完整流程</p>
+        </div>
+
+        <div class="workflow-steps">
+          <div
+            v-for="(step, index) in workflowSteps"
+            :key="step.id"
+            class="step-card"
+            :class="{ active: currentStep === index, completed: step.status === 'completed', error: step.status === 'error' }"
+          >
           <div class="step-header">
             <div class="step-number">{{ index + 1 }}</div>
             <div class="step-title">{{ step.title }}</div>
@@ -106,19 +130,11 @@
         </div>
       </div>
 
-      <div class="workflow-controls">
-        <button @click="runFullWorkflow" :disabled="isWorkflowRunning" class="btn-workflow">
-          {{ isWorkflowRunning ? '工作流执行中...' : '运行完整工作流' }}
-        </button>
-        <button @click="resetWorkflow" class="btn-reset">重置工作流</button>
-        <button @click="saveWorkflowState" class="btn-save">保存状态</button>
-        <button @click="loadWorkflowState" class="btn-load">恢复状态</button>
-      </div>
-
       <div v-if="workflowProgress > 0" class="progress-bar">
         <div class="progress-fill" :style="{ width: workflowProgress + '%' }"></div>
         <span class="progress-text">{{ Math.round(workflowProgress) }}% 完成</span>
       </div>
+    </div>
     </div>
   </div>
 </template>
@@ -142,6 +158,16 @@ interface WorkflowData {
   contentToPolish: string
   polishPrompt: string
   publishData: string
+}
+
+interface WorkflowState {
+  id: string
+  steps: WorkflowStep[]
+  data: WorkflowData
+  currentStep: number
+  progress: number
+  completed: boolean
+  timestamp: number
 }
 
 const workflowSteps = ref<WorkflowStep[]>([
@@ -187,9 +213,35 @@ const workflowData = ref<WorkflowData>({
 const currentStep = ref(0)
 const isWorkflowRunning = ref(false)
 const workflowProgress = ref(0)
+const currentWorkflowId = ref<string | null>(null)
 
 // 计算属性：当前步骤
 const currentStepData = computed(() => workflowSteps.value[currentStep.value])
+
+// 开始新工作流
+const startNewWorkflow = () => {
+  const timestamp = Date.now()
+  currentWorkflowId.value = `workflow-${timestamp}`
+
+  // 重置所有状态
+  workflowSteps.value.forEach(step => {
+    step.status = 'pending'
+    step.response = undefined
+    step.error = undefined
+  })
+  workflowData.value = {
+    zhihuUrl: '',
+    contentToPolish: '',
+    polishPrompt: '将小说内容进行适当的分行分段，并且对内容进行稍微省略，输出的文字使用场景是将文字附在图片上，作为小红书图文发布。\n\n要求：\n1. 500字左右；\n2. 不要使用 markdown 语法，不要使用如"*"等符号；\n3. 只输出正文部分，不要带有 tag、标题、作者等信息；',
+    publishData: ''
+  }
+  currentStep.value = 0
+  workflowProgress.value = 0
+  isWorkflowRunning.value = false
+
+  // 保存初始状态
+  saveWorkflowState()
+}
 
 // 获取抖音Cookie
 const getDouyinCookies = async () => {
@@ -257,9 +309,11 @@ const executeStep = async (step: WorkflowStep) => {
 
     step.response = response?.data
     step.status = 'completed'
+    saveWorkflowState() // 保存状态
   } catch (error: any) {
     step.status = 'error'
     step.error = error.message || `${step.title}执行失败`
+    saveWorkflowState() // 保存状态
   }
 }
 
@@ -293,51 +347,85 @@ const runFullWorkflow = async () => {
   }
 
   isWorkflowRunning.value = false
-  saveWorkflowState() // 自动保存状态
+  archiveWorkflow() // 自动归档完成的工作流
+}
+
+// 归档当前工作流
+const archiveWorkflow = () => {
+  if (!currentWorkflowId.value) return
+
+  try {
+    const saved = localStorage.getItem(currentWorkflowId.value)
+    if (saved) {
+      const state: WorkflowState = JSON.parse(saved)
+      state.completed = true
+      localStorage.setItem(currentWorkflowId.value, JSON.stringify(state))
+    }
+  } catch (error) {
+    console.error('归档工作流失败:', error)
+  }
+
+  // 开始新工作流
+  startNewWorkflow()
 }
 
 // 重置工作流
 const resetWorkflow = () => {
-  workflowSteps.value.forEach(step => {
-    step.status = 'pending'
-    step.response = undefined
-    step.error = undefined
-  })
-  workflowData.value = {
-    zhihuUrl: '',
-    contentToPolish: '',
-    polishPrompt: '将小说内容进行适当的分行分段，并且对内容进行稍微省略，输出的文字使用场景是将文字附在图片上，作为小红书图文发布。\n\n要求：\n1. 500字左右；\n2. 不要使用 markdown 语法，不要使用如"*"等符号；\n3. 只输出正文部分，不要带有 tag、标题、作者等信息；',
-    publishData: ''
-  }
-  currentStep.value = 0
-  workflowProgress.value = 0
-  isWorkflowRunning.value = false
+  startNewWorkflow()
 }
 
 // 保存工作流状态到localStorage
 const saveWorkflowState = () => {
-  const state = {
+  if (!currentWorkflowId.value) return
+
+  const state: WorkflowState = {
+    id: currentWorkflowId.value,
     steps: workflowSteps.value,
     data: workflowData.value,
     currentStep: currentStep.value,
-    progress: workflowProgress.value
+    progress: workflowProgress.value,
+    completed: false,
+    timestamp: parseInt(currentWorkflowId.value.replace('workflow-', ''))
   }
-  localStorage.setItem('workflow-state', JSON.stringify(state))
+  localStorage.setItem(currentWorkflowId.value, JSON.stringify(state))
 }
 
 // 从localStorage加载工作流状态
 const loadWorkflowState = () => {
   try {
-    const saved = localStorage.getItem('workflow-state')
-    if (saved) {
-      const state = JSON.parse(saved)
-      workflowSteps.value = state.steps || workflowSteps.value
-      workflowData.value = state.data || workflowData.value
-      currentStep.value = state.currentStep || 0
-      workflowProgress.value = state.progress || 0
+    // 查找所有工作流keys
+    const keys = Object.keys(localStorage).filter(key => key.startsWith('workflow-'))
+    if (keys.length === 0) {
+      startNewWorkflow()
+      return
+    }
+
+    // 找到最新的未完成工作流
+    let latestIncomplete: WorkflowState | null = null
+    for (const key of keys) {
+      const saved = localStorage.getItem(key)
+      if (saved) {
+        const state: WorkflowState = JSON.parse(saved)
+        if (!state.completed && (!latestIncomplete || state.timestamp > latestIncomplete.timestamp)) {
+          latestIncomplete = state
+        }
+      }
+    }
+
+    if (latestIncomplete) {
+      // 加载未完成的工作流
+      workflowSteps.value = latestIncomplete.steps
+      workflowData.value = latestIncomplete.data
+      currentStep.value = latestIncomplete.currentStep
+      workflowProgress.value = latestIncomplete.progress
+      currentWorkflowId.value = latestIncomplete.id
+    } else {
+      // 没有未完成的工作流，开始新的
+      startNewWorkflow()
     }
   } catch (error) {
     console.error('加载工作流状态失败:', error)
+    startNewWorkflow()
   }
 }
 
@@ -353,6 +441,122 @@ onMounted(() => {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 20px;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  display: flex;
+}
+
+.sidebar {
+  width: 280px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-radius: 15px;
+  padding: 20px;
+  margin-right: 20px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  height: fit-content;
+  position: sticky;
+  top: 20px;
+}
+
+.sidebar-header {
+  margin-bottom: 20px;
+
+  h3 {
+    margin: 0;
+    color: #333;
+    font-size: 1.2rem;
+    font-weight: 600;
+  }
+}
+
+.sidebar-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sidebar-content button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.btn-workflow {
+  background: linear-gradient(135deg, #007bff, #0056b3);
+  color: white;
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, #0056b3, #004085);
+    transform: translateY(-1px);
+  }
+
+  &:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+  }
+}
+
+.btn-reset {
+  background: #6c757d;
+  color: white;
+
+  &:hover {
+    background: #5a6268;
+  }
+}
+
+.btn-archive {
+  background: #28a745;
+  color: white;
+
+  &:hover {
+    background: #218838;
+  }
+}
+
+.btn-save {
+  background: #ffc107;
+  color: #212529;
+
+  &:hover {
+    background: #e0a800;
+  }
+}
+
+.btn-load {
+  background: #17a2b8;
+  color: white;
+
+  &:hover {
+    background: #138496;
+  }
+}
+
+.workflow-info {
+  margin-top: 20px;
+  padding: 15px;
+  background: rgba(0,0,0,0.05);
+  border-radius: 8px;
+  font-size: 13px;
+
+  p {
+    margin: 5px 0;
+    color: #666;
+
+    strong {
+      color: #333;
+    }
+  }
+}
+
+.main-content {
+  flex: 1;
+  min-width: 0;
 }
 
 .workflow-container {
@@ -670,6 +874,14 @@ onMounted(() => {
 @media (max-width: 768px) {
   .workflow-home {
     padding: 15px;
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 20px;
+    position: static;
   }
 
   .workflow-header h1 {
@@ -686,16 +898,11 @@ onMounted(() => {
     gap: 10px;
   }
 
-  .workflow-controls {
-    flex-direction: column;
-    align-items: center;
-  }
-
   .cookie-buttons {
     flex-direction: column;
   }
 
-  .btn-primary, .btn-secondary, .btn-workflow, .btn-reset, .btn-save, .btn-load {
+  .btn-primary, .btn-secondary, .btn-workflow, .btn-reset, .btn-save, .btn-load, .btn-archive {
     width: 100%;
   }
 }
