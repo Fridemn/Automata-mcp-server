@@ -79,6 +79,7 @@
                 v-else-if="step.id === 'xiaohongshu-publish'"
                 :step="step"
                 :publish-data="imagePath"
+                :image-generation-step="workflowSteps.find(s => s.id === 'long-text-image')"
                 @update-step="updateStepStatus"
                 @update-publish-data="imagePath = $event"
                 @save-state="saveWorkflowState"

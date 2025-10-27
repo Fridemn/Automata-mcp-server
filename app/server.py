@@ -87,6 +87,14 @@ class AutomataMCPServer:
             "/favicon.ico", StaticFiles(directory=str(dashboard_path)), name="favicon"
         )
 
+        # Mount data directory for serving generated images and other files
+        data_path = Path(__file__).parent.parent / "data"
+        self.app.mount(
+            "/data",
+            StaticFiles(directory=str(data_path)),
+            name="data",
+        )
+
         # Include routers
         self.app.include_router(
             create_router(self.authenticate, lambda: len(self.tools))

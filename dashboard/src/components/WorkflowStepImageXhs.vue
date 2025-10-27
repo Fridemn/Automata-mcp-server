@@ -124,8 +124,8 @@ const handleGenerateImage = async () => {
       status: 'completed' as const
     }
     emit('updateStep', completedStep)
-    // 更新publishData为生成的图片路径
-    emit('updatePublishData', response.data.image_path || `${outputFolderPath}/generated.png`)
+    // 更新publishData为响应的JSON字符串，让发布步骤解析
+    emit('updatePublishData', JSON.stringify(response.data))
     emit('saveState')
   } catch (error: any) {
     const errorStep = {
