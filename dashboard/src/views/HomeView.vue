@@ -61,6 +61,12 @@
                 class="textarea-field"
                 :disabled="step.status === 'running'"
               ></textarea>
+              <textarea
+                v-model="workflowData.polishPrompt"
+                placeholder="润色提示词"
+                class="textarea-field"
+                :disabled="step.status === 'running'"
+              ></textarea>
               <button @click="executeStep(step)" :disabled="step.status === 'running' || !workflowData.contentToPolish" class="btn-primary">
                 润色内容
               </button>
@@ -134,6 +140,7 @@ interface WorkflowStep {
 interface WorkflowData {
   zhihuUrl: string
   contentToPolish: string
+  polishPrompt: string
   publishData: string
 }
 
@@ -173,6 +180,7 @@ const workflowSteps = ref<WorkflowStep[]>([
 const workflowData = ref<WorkflowData>({
   zhihuUrl: '',
   contentToPolish: '',
+  polishPrompt: '将小说内容进行适当的分行分段，并且对内容进行稍微省略，输出的文字使用场景是将文字附在图片上，作为小红书图文发布。\n\n要求：\n1. 500字左右；\n2. 不要使用 markdown 语法，不要使用如"*"等符号；\n3. 只输出正文部分，不要带有 tag、标题、作者等信息；',
   publishData: ''
 })
 
@@ -232,7 +240,7 @@ const executeStep = async (step: WorkflowStep) => {
       case 'polish':
         response = await api.callPolishTool({
           original_text: workflowData.value.contentToPolish,
-          prompt: '请润色这篇文章，使其更加优美流畅，适合在社交媒体上发布。'
+          prompt: workflowData.value.polishPrompt
         })
         workflowData.value.publishData = response.data.content?.[0]?.text || ''
         break
@@ -298,6 +306,7 @@ const resetWorkflow = () => {
   workflowData.value = {
     zhihuUrl: '',
     contentToPolish: '',
+    polishPrompt: '将小说内容进行适当的分行分段，并且对内容进行稍微省略，输出的文字使用场景是将文字附在图片上，作为小红书图文发布。\n\n要求：\n1. 500字左右；\n2. 不要使用 markdown 语法，不要使用如"*"等符号；\n3. 只输出正文部分，不要带有 tag、标题、作者等信息；',
     publishData: ''
   }
   currentStep.value = 0

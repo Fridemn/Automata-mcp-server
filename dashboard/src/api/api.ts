@@ -3,7 +3,7 @@ import axios from 'axios';
 // Create axios instance with base URL
 const api = axios.create({
   baseURL: 'http://0.0.0.0:8000', // Match backend host
-  timeout: 10000,
+  timeout: 180000, // Increased to 3 minutes for long-running tasks like polish
   headers: {
     'X-API-Key': '0d000721', // API key from .env file
   },
