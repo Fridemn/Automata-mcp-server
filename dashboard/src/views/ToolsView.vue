@@ -16,7 +16,7 @@
       </form>
       <div v-if="tool.response" class="response">
         <h3>响应:</h3>
-        <pre>{{ JSON.stringify(tool.response, null, 2) }}</pre>
+        <ApiResponsePreview :response="tool.response" />
       </div>
     </div>
   </div>
@@ -25,6 +25,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import * as api from '../api/api';
+import ApiResponsePreview from '../components/ApiResponsePreview.vue';
 
 interface ToolField {
   name: string;

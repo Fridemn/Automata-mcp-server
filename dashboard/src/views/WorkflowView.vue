@@ -15,7 +15,7 @@
       <button @click="getDouyinCookies">获取抖音Cookie</button>
       <button @click="getXiaohongshuCookies">获取小红书Cookie</button>
       <div v-if="cookiesResponse" class="response">
-        <pre>{{ JSON.stringify(cookiesResponse, null, 2) }}</pre>
+        <ApiResponsePreview :response="cookiesResponse" />
       </div>
     </div>
 
@@ -24,7 +24,7 @@
       <input v-model="zhihuUrl" type="text" placeholder="输入知乎URL" />
       <button @click="fetchZhihuContent">获取内容</button>
       <div v-if="zhihuResponse" class="response">
-        <pre>{{ JSON.stringify(zhihuResponse, null, 2) }}</pre>
+        <ApiResponsePreview :response="zhihuResponse" />
       </div>
     </div>
 
@@ -33,7 +33,7 @@
       <textarea v-model="contentToPolish" placeholder="要润色的内容"></textarea>
       <button @click="polishContent">润色内容</button>
       <div v-if="polishResponse" class="response">
-        <pre>{{ JSON.stringify(polishResponse, null, 2) }}</pre>
+        <ApiResponsePreview :response="polishResponse" />
       </div>
     </div>
 
@@ -41,7 +41,7 @@
       <h2>步骤 4: 生成长文本图片</h2>
       <button @click="generateLongTextImage">生成图片</button>
       <div v-if="imageResponse" class="response">
-        <pre>{{ JSON.stringify(imageResponse, null, 2) }}</pre>
+        <ApiResponsePreview :response="imageResponse" />
       </div>
     </div>
 
@@ -50,7 +50,7 @@
       <textarea v-model="publishData" placeholder="要发布的数据"></textarea>
       <button @click="publishToXiaohongshu">发布</button>
       <div v-if="publishResponse" class="response">
-        <pre>{{ JSON.stringify(publishResponse, null, 2) }}</pre>
+        <ApiResponsePreview :response="publishResponse" />
       </div>
     </div>
 
@@ -67,6 +67,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import * as api from '../api/api';
+import ApiResponsePreview from '../components/ApiResponsePreview.vue';
 
 const zhihuUrl = ref('');
 const contentToPolish = ref('');

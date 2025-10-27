@@ -88,7 +88,7 @@
 
             <!-- 响应显示 -->
             <div v-if="step.response" class="step-response">
-              <pre>{{ JSON.stringify(step.response, null, 2) }}</pre>
+              <ApiResponsePreview :response="step.response" />
             </div>
 
             <!-- 错误显示 -->
@@ -120,6 +120,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import * as api from '../api/api'
+import ApiResponsePreview from '../components/ApiResponsePreview.vue'
 
 interface WorkflowStep {
   id: string
