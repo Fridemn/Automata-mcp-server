@@ -66,88 +66,80 @@
             <p class="step-description">{{ step.description }}</p>
 
             <!-- Cookie获取步骤 -->
-            <div v-if="step.id === 'cookies-xhs'" class="step-inputs">
-              <div class="cookie-buttons">
-                <button @click="getXiaohongshuCookies" :disabled="step.status === 'running'" class="btn-secondary">
-                  获取小红书Cookie
-                </button>
-              </div>
-            </div>
+            <WorkflowStepCookiesXhs
+              v-if="step.id === 'cookies-xhs'"
+              :step="step"
+              @update-step="updateStep"
+              @save-state="saveWorkflowState"
+            />
 
-            <div v-if="step.id === 'cookies-dy'" class="step-inputs">
-              <div class="cookie-buttons">
-                <button @click="getDouyinCookies" :disabled="step.status === 'running'" class="btn-secondary">
-                  获取抖音Cookie
-                </button>
-              </div>
-            </div>
+            <WorkflowStepCookiesDy
+              v-if="step.id === 'cookies-dy'"
+              :step="step"
+              @update-step="updateStep"
+              @save-state="saveWorkflowState"
+            />
 
             <!-- 知乎内容获取步骤 -->
-            <div v-if="step.id === 'zhihu'" class="step-inputs">
-              <input
-                v-model="workflowData.zhihuUrl"
-                type="url"
-                placeholder="输入知乎文章URL"
-                class="input-field"
-                :disabled="step.status === 'running'"
-              />
-              <button @click="executeStep(step)" :disabled="step.status === 'running' || !workflowData.zhihuUrl" class="btn-primary">
-                获取内容
-              </button>
-            </div>
+            <WorkflowStepZhihu
+              v-if="step.id === 'zhihu'"
+              :step="step"
+              :zhihu-url="workflowData.zhihuUrl"
+              @update-step="updateStep"
+              @update-zhihu-url="updateZhihuUrl"
+              @update-content-to-polish="updateContentToPolish"
+              @save-state="saveWorkflowState"
+            />
 
             <!-- 内容润色步骤 -->
-            <div v-if="step.id === 'polish'" class="step-inputs">
-              <textarea
-                v-model="workflowData.contentToPolish"
-                placeholder="要润色的内容"
-                class="textarea-field"
-                :disabled="step.status === 'running'"
-              ></textarea>
-              <textarea
-                v-model="workflowData.polishPrompt"
-                placeholder="润色提示词"
-                class="textarea-field"
-                :disabled="step.status === 'running'"
-              ></textarea>
-              <button @click="executeStep(step)" :disabled="step.status === 'running' || !workflowData.contentToPolish" class="btn-primary">
-                润色内容
-              </button>
-            </div>
+            <WorkflowStepPolish
+              v-if="step.id === 'polish'"
+              :step="step"
+              :content-to-polish="workflowData.contentToPolish"
+              :polish-prompt="workflowData.polishPrompt"
+              @update-step="updateStep"
+              @update-content-to-polish="updateContentToPolish"
+              @update-polish-prompt="updatePolishPrompt"
+              @update-publish-data="updatePublishData"
+              @save-state="saveWorkflowState"
+            />
 
             <!-- 长文本图片生成步骤 -->
-            <div v-if="step.id === 'image-xhs'" class="step-inputs">
-              <button @click="executeStep(step)" :disabled="step.status === 'running'" class="btn-primary">
-                生成长文本图片
-              </button>
-            </div>
+            <WorkflowStepImageXhs
+              v-if="step.id === 'image-xhs'"
+              :step="step"
+              :publish-data="workflowData.publishData"
+              @update-step="updateStep"
+              @save-state="saveWorkflowState"
+            />
 
             <!-- 视频剪辑步骤 -->
-            <div v-if="step.id === 'video-edit'" class="step-inputs">
-              <button @click="executeStep(step)" :disabled="step.status === 'running'" class="btn-primary">
-                开始视频剪辑
-              </button>
-            </div>
+            <WorkflowStepVideoEdit
+              v-if="step.id === 'video-edit'"
+              :step="step"
+              :publish-data="workflowData.publishData"
+              :workflow-id="currentWorkflowId"
+              @update-step="updateStep"
+              @save-state="saveWorkflowState"
+            />
 
             <!-- 小红书发布步骤 -->
-            <div v-if="step.id === 'publish-xhs'" class="step-inputs">
-              <textarea
-                v-model="workflowData.publishData"
-                placeholder="要发布的内容"
-                class="textarea-field"
-                :disabled="step.status === 'running'"
-              ></textarea>
-              <button @click="executeStep(step)" :disabled="step.status === 'running' || !workflowData.publishData" class="btn-primary">
-                发布到小红书
-              </button>
-            </div>
+            <WorkflowStepPublishXhs
+              v-if="step.id === 'publish-xhs'"
+              :step="step"
+              :publish-data="workflowData.publishData"
+              @update-step="updateStep"
+              @update-publish-data="updatePublishData"
+              @save-state="saveWorkflowState"
+            />
 
             <!-- 抖音发布步骤 -->
-            <div v-if="step.id === 'publish-dy'" class="step-inputs">
-              <button @click="executeStep(step)" :disabled="step.status === 'running'" class="btn-primary">
-                发布到抖音
-              </button>
-            </div>
+            <WorkflowStepPublishDy
+              v-if="step.id === 'publish-dy'"
+              :step="step"
+              @update-step="updateStep"
+              @save-state="saveWorkflowState"
+            />
 
             <!-- 响应显示 -->
             <div v-if="step.response" class="step-response">
@@ -176,6 +168,14 @@
 import { ref, onMounted, computed } from 'vue'
 import * as api from '../api/api'
 import ApiResponsePreview from '../components/ApiResponsePreview.vue'
+import WorkflowStepCookiesXhs from '../components/WorkflowStepCookiesXhs.vue'
+import WorkflowStepCookiesDy from '../components/WorkflowStepCookiesDy.vue'
+import WorkflowStepZhihu from '../components/WorkflowStepZhihu.vue'
+import WorkflowStepPolish from '../components/WorkflowStepPolish.vue'
+import WorkflowStepImageXhs from '../components/WorkflowStepImageXhs.vue'
+import WorkflowStepVideoEdit from '../components/WorkflowStepVideoEdit.vue'
+import WorkflowStepPublishXhs from '../components/WorkflowStepPublishXhs.vue'
+import WorkflowStepPublishDy from '../components/WorkflowStepPublishDy.vue'
 import '../assets/styles/HomeView.scss'
 
 interface WorkflowStep {
@@ -458,6 +458,34 @@ const executeStep = async (step: WorkflowStep) => {
     step.error = error.message || `${step.title}执行失败`
     saveWorkflowState() // 保存状态
   }
+}
+
+// 更新步骤状态
+const updateStep = (updatedStep: WorkflowStep) => {
+  const index = workflowSteps.value.findIndex(s => s.id === updatedStep.id)
+  if (index !== -1) {
+    workflowSteps.value[index] = updatedStep
+  }
+}
+
+// 更新知乎URL
+const updateZhihuUrl = (url: string) => {
+  workflowData.value.zhihuUrl = url
+}
+
+// 更新待润色内容
+const updateContentToPolish = (content: string) => {
+  workflowData.value.contentToPolish = content
+}
+
+// 更新润色提示词
+const updatePolishPrompt = (prompt: string) => {
+  workflowData.value.polishPrompt = prompt
+}
+
+// 更新发布数据
+const updatePublishData = (data: string) => {
+  workflowData.value.publishData = data
 }
 
 // 重试步骤
