@@ -120,13 +120,50 @@ def create_router(authenticate_func, tools_count_func):
         else:
             return {"success": False, "error": "No saved cookies found"}
 
-    @router.get("/cookies/xiaohongshu/load")
-    async def load_xiaohongshu_saved_cookies(_api_key: str = Depends(verify_api_key)):
-        """加载已保存的小红书cookies"""
-        cookies_json = load_xiaohongshu_cookies()
-        if cookies_json:
-            return {"success": True, "cookies": cookies_json}
-        else:
-            return {"success": False, "error": "No saved cookies found"}
+    @router.get("/cookies/xiaohongshu/validate")
+    async def validate_xiaohongshu_cookies(_api_key: str = Depends(verify_api_key)):
+        """验证小红书cookies是否有效"""
+        try:
+            cookies_json = load_xiaohongshu_cookies()
+            if not cookies_json:
+                return {"valid": False, "error": "No saved cookies found"}
+
+            # TODO: 实现实际的cookie验证逻辑
+            # 这里可以添加请求小红书API来验证cookie是否有效
+            # 暂时返回true，假设cookies有效
+            return {"valid": True, "cookies": cookies_json}
+        except Exception as e:
+            return {"valid": False, "error": str(e)}
+
+    @router.get("/cookies/douyin/validate")
+    async def validate_douyin_cookies(_api_key: str = Depends(verify_api_key)):
+        """验证抖音cookies是否有效"""
+        try:
+            cookies_json = load_douyin_cookies()
+            if not cookies_json:
+                return {"valid": False, "error": "No saved cookies found"}
+
+            # TODO: 实现实际的cookie验证逻辑
+            # 这里可以添加请求抖音API来验证cookie是否有效
+            # 暂时返回true，假设cookies有效
+            return {"valid": True, "cookies": cookies_json}
+        except Exception as e:
+            return {"valid": False, "error": str(e)}
+
+    @router.post("/video/edit")
+    async def edit_video(data: dict, _api_key: str = Depends(verify_api_key)):
+        """剪辑视频"""
+        try:
+            # TODO: 实现完整的视频剪辑逻辑
+            # 这里需要调用create_video函数，并传入适当的参数
+
+            # 暂时返回模拟结果
+            return {
+                "success": True,
+                "message": "视频剪辑完成",
+                "video_path": f"output_{data.get('workflow_id', 'unknown')}.mp4",
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     return router

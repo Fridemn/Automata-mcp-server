@@ -51,5 +51,8 @@ export const getDouyinCookies = (data: Record<string, unknown>) => api.post('/co
 export const getXiaohongshuCookies = (data: Record<string, unknown>) => api.post('/cookies/xiaohongshu/get', data);
 export const loadDouyinCookies = () => api.get('/cookies/douyin/load');
 export const loadXiaohongshuCookies = () => api.get('/cookies/xiaohongshu/load');
+export const validateDouyinCookies = () => api.get('/cookies/douyin/validate');
+export const validateXiaohongshuCookies = () => api.get('/cookies/xiaohongshu/validate');
+export const editVideo = (data: Record<string, unknown>) => api.post('/video/edit', data);
 
 export default api;
