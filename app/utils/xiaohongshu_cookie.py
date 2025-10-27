@@ -111,7 +111,7 @@ def save_xiaohongshu_cookies(cookies_json: str) -> bool:
         cookies_dir.mkdir(parents=True, exist_ok=True)
 
         # 保存到文件
-        cookies_file = cookies_dir / "xiaohongshu.json"
+        cookies_file = cookies_dir / "xhs.json"
         with open(cookies_file, "w", encoding="utf-8") as f:
             f.write(cookies_json)
 
@@ -129,7 +129,7 @@ def load_xiaohongshu_cookies() -> str:
         JSON格式的cookies字符串，如果文件不存在返回None
     """
     try:
-        cookies_file = Path("data/cookies/xiaohongshu.json")
+        cookies_file = Path("data/cookies/xhs.json")
         if cookies_file.exists():
             with open(cookies_file, "r", encoding="utf-8") as f:
                 return f.read()
