@@ -75,6 +75,14 @@
                 @save-state="saveWorkflowState"
               />
 
+              <WorkflowStepGenerateInfo
+                v-else-if="step.id === 'generate-info'"
+                :step="step"
+                :polish-step="workflowSteps.find(s => s.id === 'polish')"
+                @update-step="updateStepStatus"
+                @save-state="saveWorkflowState"
+              />
+
               <WorkflowStepPublishXhs
                 v-else-if="step.id === 'xiaohongshu-publish'"
                 :step="step"
@@ -163,6 +171,7 @@ import WorkflowStepCookiesXhs from '@/components/WorkflowStepCookiesXhs.vue'
 import WorkflowStepZhihu from '@/components/WorkflowStepZhihu.vue'
 import WorkflowStepPolish from '@/components/WorkflowStepPolish.vue'
 import WorkflowStepImageXhs from '@/components/WorkflowStepImageXhs.vue'
+import WorkflowStepGenerateInfo from '@/components/WorkflowStepGenerateInfo.vue'
 import WorkflowStepPublishXhs from '@/components/WorkflowStepPublishXhs.vue'
 
 interface WorkflowStep {
@@ -215,6 +224,12 @@ const workflowSteps = ref<WorkflowStep[]>([
     status: 'pending',
     endpoint: '/tools/long-text-content',
     method: 'POST'
+  },
+  {
+    id: 'generate-info',
+    title: '生成信息',
+    description: '生成小红书标题和Tag',
+    status: 'pending'
   },
   {
     id: 'xiaohongshu-publish',
@@ -336,7 +351,17 @@ const loadWorkflowState = () => {
   if (savedState) {
     try {
       const state = JSON.parse(savedState)
-      if (state.steps) workflowSteps.value = state.steps
+      // 只加载步骤状态，不覆盖步骤定义
+      if (state.steps && state.steps.length === workflowSteps.value.length) {
+        // 仅更新状态和响应数据，保留步骤定义
+        state.steps.forEach((savedStep: WorkflowStep, index: number) => {
+          if (workflowSteps.value[index] && workflowSteps.value[index].id === savedStep.id) {
+            workflowSteps.value[index].status = savedStep.status
+            workflowSteps.value[index].response = savedStep.response
+            workflowSteps.value[index].error = savedStep.error
+          }
+        })
+      }
       if (state.zhihuUrl) zhihuUrl.value = state.zhihuUrl
       if (state.contentToPolish) contentToPolish.value = state.contentToPolish
       if (state.polishPrompt) polishPrompt.value = state.polishPrompt
