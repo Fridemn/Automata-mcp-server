@@ -120,6 +120,15 @@ def create_router(authenticate_func, tools_count_func):
         else:
             return {"success": False, "error": "No saved cookies found"}
 
+    @router.get("/cookies/xiaohongshu/load")
+    async def load_xiaohongshu_saved_cookies(_api_key: str = Depends(verify_api_key)):
+        """加载已保存的小红书cookies"""
+        cookies_json = load_xiaohongshu_cookies()
+        if cookies_json:
+            return {"success": True, "cookies": cookies_json}
+        else:
+            return {"success": False, "error": "No saved cookies found"}
+
     @router.get("/cookies/xiaohongshu/validate")
     async def validate_xiaohongshu_cookies(_api_key: str = Depends(verify_api_key)):
         """验证小红书cookies是否有效"""

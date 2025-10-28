@@ -88,6 +88,7 @@
                 :step="step"
                 :publish-data="imagePath"
                 :image-generation-step="workflowSteps.find(s => s.id === 'long-text-image')"
+                :generate-info-step="workflowSteps.find(s => s.id === 'generate-info')"
                 @update-step="updateStepStatus"
                 @update-publish-data="imagePath = $event"
                 @save-state="saveWorkflowState"

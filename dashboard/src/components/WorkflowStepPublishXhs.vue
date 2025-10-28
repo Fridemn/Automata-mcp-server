@@ -3,11 +3,28 @@
     <div class="flex flex-col gap-4">
       <button
         @click="handlePublish"
-        :disabled="step.status === 'running' || !hasValidImages"
+        :disabled="step.status === 'running' || !hasValidImages || !hasGeneratedInfo"
         class="px-4 py-2 bg-blue-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
       >
-        {{ hasValidImages ? `发布到小红书 (${imageFiles.length} 张图片)` : '等待上一步生成图片...' }}
+        {{ getButtonText() }}
       </button>
+
+      <!-- 显示将要发布的信息 -->
+      <div v-if="hasGeneratedInfo && hasValidImages" class="mt-4 p-4 bg-gray-50 rounded border border-gray-200">
+        <h3 class="text-sm font-semibold text-gray-700 mb-2">发布信息预览：</h3>
+        <div class="mb-2">
+          <span class="text-xs font-semibold text-gray-600">标题：</span>
+          <p class="text-sm text-gray-800">{{ generatedTitle }}</p>
+        </div>
+        <div class="mb-2">
+          <span class="text-xs font-semibold text-gray-600">标签：</span>
+          <p class="text-sm text-gray-800">{{ generatedTagsText }}</p>
+        </div>
+        <div>
+          <span class="text-xs font-semibold text-gray-600">图片数量：</span>
+          <p class="text-sm text-gray-800">{{ imageFiles.length }} 张</p>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -15,6 +32,7 @@
 <script setup lang="ts">
 import { defineProps, defineEmits, computed } from 'vue'
 import * as api from '@/api/api'
+import axios from 'axios'
 
 interface WorkflowStep {
   id: string
@@ -29,6 +47,7 @@ const props = defineProps<{
   step: WorkflowStep
   publishData: string
   imageGenerationStep?: WorkflowStep
+  generateInfoStep?: WorkflowStep
 }>()
 
 const emit = defineEmits<{
@@ -78,6 +97,45 @@ const imageFiles = computed(() => {
 // 检查是否有有效的图片
 const hasValidImages = computed(() => imageFiles.value.length > 0)
 
+// 从生成信息步骤获取标题
+const generatedTitle = computed(() => {
+  if (!props.generateInfoStep?.response) return ''
+  const response = props.generateInfoStep.response
+  return response.generated?.title || ''
+})
+
+// 从生成信息步骤获取标签文本
+const generatedTagsText = computed(() => {
+  if (!props.generateInfoStep?.response) return ''
+  const response = props.generateInfoStep.response
+  return response.generated?.tags || ''
+})
+
+// 解析标签文本为数组
+const generatedTags = computed(() => {
+  const tagsText = generatedTagsText.value
+  if (!tagsText) return []
+  // 提取所有 #标签 格式的内容
+  const matches = tagsText.matchAll(/#([^\s#]+)/g)
+  const tags: string[] = []
+  for (const match of matches) {
+    tags.push(match[1])
+  }
+  return tags
+})
+
+// 检查是否有生成的信息
+const hasGeneratedInfo = computed(() => {
+  return generatedTitle.value.trim() !== '' || generatedTags.value.length > 0
+})
+
+// 获取按钮文本
+const getButtonText = () => {
+  if (!hasValidImages.value) return '等待生成图片...'
+  if (!hasGeneratedInfo.value) return '等待生成标题和标签...'
+  return `发布到小红书 (${imageFiles.value.length} 张图片)`
+}
+
 // 解析文本中的图片路径
 const parseImagePaths = (text: string, files: string[]) => {
   // 匹配输出路径
@@ -105,14 +163,60 @@ const parseImagePaths = (text: string, files: string[]) => {
   }
 }
 
+// 将图片文件转换为 base64
+const convertImageToBase64 = async (imagePath: string): Promise<string> => {
+  try {
+    // 使用 axios 获取图片
+    const response = await axios.get(`http://localhost:8000/${imagePath}`, {
+      responseType: 'arraybuffer'
+    })
+    const base64 = btoa(
+      new Uint8Array(response.data).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    )
+    return base64
+  } catch (error) {
+    console.error('Failed to load image:', imagePath, error)
+    throw error
+  }
+}
+
 const handlePublish = async () => {
   const updatedStep = { ...props.step, status: 'running' as const, error: undefined }
   emit('updateStep', updatedStep)
 
   try {
-    // 使用解析出的图片路径，如果有多张图片，使用第一张或者全部
-    const imagePath = imageFiles.value.length > 0 ? imageFiles.value[0] : props.publishData
-    const response = await api.callXiaohongshuTool({ image_path: imagePath })
+    // 加载 cookies
+    const cookiesResponse = await axios.get('http://localhost:8000/cookies/xiaohongshu/load', {
+      headers: {
+        'X-API-Key': '0d000721'
+      }
+    })
+
+    if (!cookiesResponse.data.success) {
+      throw new Error(cookiesResponse.data.error || '加载 cookies 失败')
+    }
+
+    const cookies = cookiesResponse.data.cookies
+
+    // 转换所有图片为 base64
+    const imageBase64List: string[] = []
+    for (const imagePath of imageFiles.value) {
+      const base64 = await convertImageToBase64(imagePath)
+      imageBase64List.push(base64)
+    }
+
+    // 准备发布参数
+    const publishParams = {
+      cookies: cookies,
+      title: generatedTitle.value,
+      content: '', // 根据要求，content 为空
+      images: imageBase64List,
+      tags: generatedTags.value
+    }
+
+    // 调用小红书发布接口
+    const response = await api.callXiaohongshuTool(publishParams)
+
     const completedStep = {
       ...updatedStep,
       response: response.data,
@@ -125,7 +229,7 @@ const handlePublish = async () => {
     const errorStep = {
       ...updatedStep,
       status: 'error' as const,
-      error: error.message || '发布到小红书失败'
+      error: error.response?.data?.message || error.message || '发布到小红书失败'
     }
     emit('updateStep', errorStep)
     emit('saveState')

@@ -25,7 +25,7 @@ from app.base_tool import BaseMCPTool
 class XiaohongshuParams(BaseModel):
     cookies: str = Field(description="Xiaohongshu login cookies as JSON string")
     title: str = Field(description="Title of the post")
-    content: str = Field(description="Content of the post")
+    content: str = Field(default="", description="Content of the post (optional)")
     images: List[str] = Field(description="List of base64 encoded images")
     tags: List[str] = Field(description="List of tags for the post")
 
@@ -38,6 +38,7 @@ class XiaohongshuTool(BaseMCPTool):
         return {
             "endpoint": "/tools/xiaohongshu",
             "params_class": XiaohongshuParams,
+            "tool_name": "xiaohongshu_publish",
         }
 
     async def list_tools(self) -> list[Tool]:
@@ -71,10 +72,11 @@ class XiaohongshuTool(BaseMCPTool):
         if not args.title.strip():
             raise McpError(ErrorData(code=INVALID_PARAMS, message="Title is required"))
 
-        if not args.content.strip():
-            raise McpError(
-                ErrorData(code=INVALID_PARAMS, message="Content is required")
-            )
+        # Content is optional, can be empty
+        # if not args.content.strip():
+        #     raise McpError(
+        #         ErrorData(code=INVALID_PARAMS, message="Content is required")
+        #     )
 
         if not args.images:
             raise McpError(
