@@ -1,33 +1,12 @@
 <template>
   <div class="workflow-step-publish-xhs">
     <div class="flex flex-col gap-4">
-      <!-- 图片预览区域 -->
-      <div v-if="imageFiles.length > 0" class="mb-4">
-        <label class="block text-sm font-medium text-gray-700 mb-2">生成的图片预览 ({{ imageFiles.length }} 张)</label>
-        <div class="grid grid-cols-2 gap-4">
-          <div v-for="(imagePath, index) in imageFiles" :key="index" class="border rounded-lg p-2 bg-gray-50">
-            <img
-              :src="`http://localhost:8000/${imagePath}`"
-              :alt="`生成的图片 ${index + 1}`"
-              class="w-full h-auto rounded mb-2"
-              @error="handleImageError($event, imagePath)"
-            />
-            <p class="text-xs text-gray-500 break-all">{{ imagePath }}</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- 无图片提示 -->
-      <div v-else class="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-        <p class="text-sm text-yellow-700">等待上一步生成图片...</p>
-      </div>
-
       <button
         @click="handlePublish"
-        :disabled="step.status === 'running' || imageFiles.length === 0"
+        :disabled="step.status === 'running' || !hasValidImages"
         class="px-4 py-2 bg-blue-500 text-white border-none rounded cursor-pointer transition-colors duration-200 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
       >
-        发布到小红书 ({{ imageFiles.length }} 张图片)
+        {{ hasValidImages ? `发布到小红书 (${imageFiles.length} 张图片)` : '等待上一步生成图片...' }}
       </button>
     </div>
   </div>
@@ -96,6 +75,9 @@ const imageFiles = computed(() => {
   return [...new Set(files)] // 去重
 })
 
+// 检查是否有有效的图片
+const hasValidImages = computed(() => imageFiles.value.length > 0)
+
 // 解析文本中的图片路径
 const parseImagePaths = (text: string, files: string[]) => {
   // 匹配输出路径
@@ -121,13 +103,6 @@ const parseImagePaths = (text: string, files: string[]) => {
   for (const match of pathMatches) {
     files.push(match[0])
   }
-}
-
-// 处理图片加载错误
-const handleImageError = (event: Event, imagePath: string) => {
-  console.error('Failed to load image:', imagePath)
-  const img = event.target as HTMLImageElement
-  img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2YzZjRmNiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5Y2EzYWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj7lm77niYfliqDovb3lpLHotKU8L3RleHQ+PC9zdmc+'
 }
 
 const handlePublish = async () => {
