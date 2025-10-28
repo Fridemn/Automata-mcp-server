@@ -298,6 +298,9 @@ async def generate_video_from_text(
     project_root = os.getcwd()
     data_dir = os.path.join(project_root, "data", "jianyin")
 
+    # 确保输出目录存在
+    os.makedirs(data_dir, exist_ok=True)
+
     if audio_output_file == "generated_audio.mp3":
         audio_output_file = os.path.join(data_dir, "generated_audio.mp3")
     if vtt_output_file == "generated_subtitle.vtt":
