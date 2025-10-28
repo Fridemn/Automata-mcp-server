@@ -274,8 +274,12 @@ class ImageTextRenderer:
 
                 # 绘制文字
                 for i, line in enumerate(lines):
-                    # 对于空行，绘制一个空格以保持行间距
-                    line_to_draw = line if line.strip() else " "
+                    # 去除行尾空格，避免空格渲染为方块
+                    line_to_draw = line.rstrip()
+
+                    # 跳过空行，不绘制任何内容
+                    if not line_to_draw:
+                        continue
 
                     # 计算文字宽度，用于水平居左
                     bbox = draw.textbbox((0, 0), line_to_draw, font=font)
