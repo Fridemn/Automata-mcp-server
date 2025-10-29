@@ -1,6 +1,8 @@
 import importlib
+import inspect
 import os
 import subprocess
+import threading
 import time
 import webbrowser
 from pathlib import Path
@@ -9,7 +11,7 @@ from pathlib import Path
 import uvicorn
 import yaml
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
@@ -237,9 +239,6 @@ class AutomataMCPServer:
         def create_tool_endpoint(p_class, use_form_flag, tool_name_default):
             if use_form_flag:
                 # For form data, create a dynamic function with proper Form parameters
-                import inspect
-
-                from fastapi import File, Form, UploadFile
 
                 # Get the fields from the params class
                 fields = p_class.model_fields
@@ -398,8 +397,6 @@ def main():
         time.sleep(2)  # Wait for server to fully start
         url = f"http://{host}:{port}/dashboard"
         webbrowser.open(url)
-
-    import threading
 
     threading.Thread(target=open_browser, daemon=True).start()
 
