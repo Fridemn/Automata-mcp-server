@@ -21,9 +21,9 @@ class BaseMCPTool(ABC):
         """Call a tool by name with given arguments."""
 
     @abstractmethod
-    def get_route_config(self) -> dict:
-        """Get route configuration for this tool.
+    def get_route_config(self) -> list[dict]:
+        """Get route configurations for this tool.
 
         Returns:
-            dict: Configuration containing 'endpoint', 'params_class', etc.
+            list[dict]: List of configurations containing 'endpoint', 'params_class', etc.
         """

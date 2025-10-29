@@ -55,12 +55,14 @@ class VideoGenerateTool(BaseMCPTool):
     def __init__(self):
         super().__init__()
 
-    def get_route_config(self) -> dict:
-        return {
-            "endpoint": "/tools/video_generate",
-            "params_class": VideoGenerateParams,
-            "use_form": True,
-        }
+    def get_route_config(self) -> list[dict]:
+        return [
+            {
+                "endpoint": "/tools/video_generate",
+                "params_class": VideoGenerateParams,
+                "use_form": True,
+            }
+        ]
 
     async def list_tools(self) -> list[Tool]:
         return [

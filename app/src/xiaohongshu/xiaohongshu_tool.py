@@ -34,12 +34,14 @@ class XiaohongshuTool(BaseMCPTool):
     def __init__(self):
         super().__init__()
 
-    def get_route_config(self) -> dict:
-        return {
-            "endpoint": "/tools/xiaohongshu",
-            "params_class": XiaohongshuParams,
-            "tool_name": "xiaohongshu_publish",
-        }
+    def get_route_config(self) -> list[dict]:
+        return [
+            {
+                "endpoint": "/tools/xiaohongshu",
+                "params_class": XiaohongshuParams,
+                "tool_name": "xiaohongshu_publish",
+            }
+        ]
 
     async def list_tools(self) -> list[Tool]:
         return [

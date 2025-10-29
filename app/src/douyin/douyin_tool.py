@@ -35,11 +35,13 @@ class DouyinTool(BaseMCPTool):
     def __init__(self):
         super().__init__()
 
-    def get_route_config(self) -> dict:
-        return {
-            "endpoint": "/tools/douyin",
-            "params_class": DouyinParams,
-        }
+    def get_route_config(self) -> list[dict]:
+        return [
+            {
+                "endpoint": "/tools/douyin",
+                "params_class": DouyinParams,
+            }
+        ]
 
     async def list_tools(self) -> list[Tool]:
         return [

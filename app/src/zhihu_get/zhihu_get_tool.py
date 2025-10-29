@@ -26,11 +26,13 @@ class ZhihuGetTool(BaseMCPTool):
     def __init__(self):
         super().__init__()
 
-    def get_route_config(self) -> dict:
-        return {
-            "endpoint": "/tools/zhihu_get",
-            "params_class": ZhihuGetParams,
-        }
+    def get_route_config(self) -> list[dict]:
+        return [
+            {
+                "endpoint": "/tools/zhihu_get",
+                "params_class": ZhihuGetParams,
+            }
+        ]
 
     async def list_tools(self) -> list[Tool]:
         return [

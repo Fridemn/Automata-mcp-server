@@ -869,13 +869,15 @@ class LongTextContentTool(BaseMCPTool):
     def __init__(self):
         super().__init__()
 
-    def get_route_config(self) -> dict:
-        return {
-            "endpoint": "/tools/long-text-content",
-            "params_class": LongTextContentParams,
-            "use_form": True,
-            "tool_name": "create_long_text_content",
-        }
+    def get_route_config(self) -> list[dict]:
+        return [
+            {
+                "endpoint": "/tools/long-text-content",
+                "params_class": LongTextContentParams,
+                "use_form": True,
+                "tool_name": "create_long_text_content",
+            }
+        ]
 
     async def list_tools(self) -> list[Tool]:
         return [
