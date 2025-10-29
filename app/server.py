@@ -5,6 +5,7 @@ import time
 import webbrowser
 from pathlib import Path
 
+# Core server module for Automata MCP Server
 import uvicorn
 import yaml
 from dotenv import load_dotenv
