@@ -1,4 +1,0 @@
-enabled: true
-packages:
-  - playwright
-  - playwright-stealth

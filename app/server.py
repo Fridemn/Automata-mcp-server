@@ -71,23 +71,6 @@ class AutomataMCPServer:
         self.mcp = FastApiMCP(self.app)
         self.mcp.mount_http()
 
-        # Mount static files for dashboard
-        dashboard_path = Path(__file__).parent.parent / "data" / "dist"
-        self.app.mount(
-            "/dashboard",
-            StaticFiles(directory=str(dashboard_path), html=True),
-            name="dashboard",
-        )
-        # Also mount assets at root for index.html
-        self.app.mount(
-            "/assets",
-            StaticFiles(directory=str(dashboard_path / "assets")),
-            name="assets",
-        )
-        self.app.mount(
-            "/favicon.ico", StaticFiles(directory=str(dashboard_path)), name="favicon"
-        )
-
         # Mount data directory for serving generated images and other files
         data_path = Path(__file__).parent.parent / "data"
         self.app.mount(
@@ -98,7 +81,7 @@ class AutomataMCPServer:
 
         # Include routers
         self.app.include_router(
-            create_router(self.authenticate, lambda: len(self.tools), self.tools)
+            create_router(self.authenticate, lambda: len(self.tools), self.tools),
         )
 
     def install_dependencies_for_enabled_tools(self):
@@ -204,11 +187,11 @@ class AutomataMCPServer:
                         + "Tool"
                     )
                     logger.info(
-                        f"Looking for class {tool_class_name} in module {module_path}"
+                        f"Looking for class {tool_class_name} in module {module_path}",
                     )
                     if not hasattr(module, tool_class_name):
                         logger.error(
-                            f"Module {module_path} does not have attribute {tool_class_name}, available: {dir(module)}"
+                            f"Module {module_path} does not have attribute {tool_class_name}, available: {dir(module)}",
                         )
                         continue
                     tool_class = getattr(module, tool_class_name)
@@ -237,9 +220,9 @@ class AutomataMCPServer:
         route_configs = tool_instance.get_route_config()
         if isinstance(route_configs, dict):
             route_configs = [route_configs]
-        if not isinstance(route_configs, (list, tuple)):
+        if not isinstance(route_configs, list | tuple):
             logger.error(
-                f"Tool {modname} get_route_config must return a dict or list of dicts, got {type(route_configs)}"
+                f"Tool {modname} get_route_config must return a dict or list of dicts, got {type(route_configs)}",
             )
             return
 
@@ -255,7 +238,8 @@ class AutomataMCPServer:
             if use_form_flag:
                 # For form data, create a dynamic function with proper Form parameters
                 import inspect
-                from fastapi import Form, File, UploadFile
+
+                from fastapi import File, Form, UploadFile
 
                 # Get the fields from the params class
                 fields = p_class.model_fields
@@ -279,9 +263,10 @@ class AutomataMCPServer:
                                 field_name,
                                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
                                 default=form_func(
-                                    ..., description=field_info.description or ""
+                                    ...,
+                                    description=field_info.description or "",
                                 ),
-                            )
+                            ),
                         )
                     else:
                         params.append(
@@ -292,7 +277,7 @@ class AutomataMCPServer:
                                     field_info.default,
                                     description=field_info.description or "",
                                 ),
-                            )
+                            ),
                         )
 
                 # Add API key parameter
@@ -301,13 +286,13 @@ class AutomataMCPServer:
                         "_api_key",
                         inspect.Parameter.POSITIONAL_OR_KEYWORD,
                         default=Depends(verify_api_key),
-                    )
+                    ),
                 )
 
                 # Create the function signature
                 sig = inspect.Signature(params)
 
-                async def tool_endpoint(*args, **kwargs):
+                async def tool_endpoint(**kwargs):
                     # The function will receive form parameters directly
                     # Separate API key from form data
                     kwargs.pop("_api_key", None)
@@ -322,7 +307,8 @@ class AutomataMCPServer:
                     # Use the provided tool_name_default captured in closure
                     tool_name = tool_name_default
                     result = await tool_instance.call_tool(
-                        tool_name, params_obj.model_dump()
+                        tool_name,
+                        params_obj.model_dump(),
                     )
                     # Convert to dict for JSON response
                     return {
@@ -337,26 +323,26 @@ class AutomataMCPServer:
                 tool_endpoint.__signature__ = sig
 
                 return tool_endpoint
-            else:
 
-                async def tool_endpoint(
-                    params,  # type: ignore
-                    _api_key: str = Depends(verify_api_key),
-                ):
-                    # params is already validated by FastAPI as the correct type
-                    # Use the provided tool_name_default captured in closure
-                    tool_name = tool_name_default
-                    result = await tool_instance.call_tool(
-                        tool_name, params.model_dump()
-                    )
-                    # Convert to dict for JSON response
-                    return {
-                        "content": [
-                            {"type": item.type, "text": item.text}
-                            for item in result
-                            if hasattr(item, "type") and hasattr(item, "text")
-                        ],
-                    }
+            async def tool_endpoint(
+                params,  # type: ignore
+                _api_key: str = Depends(verify_api_key),
+            ):
+                # params is already validated by FastAPI as the correct type
+                # Use the provided tool_name_default captured in closure
+                tool_name = tool_name_default
+                result = await tool_instance.call_tool(
+                    tool_name,
+                    params.model_dump(),
+                )
+                # Convert to dict for JSON response
+                return {
+                    "content": [
+                        {"type": item.type, "text": item.text}
+                        for item in result
+                        if hasattr(item, "type") and hasattr(item, "text")
+                    ],
+                }
 
             # Set the type annotation dynamically
             if not use_form_flag:
@@ -375,12 +361,14 @@ class AutomataMCPServer:
 
             if not endpoint or not params_class:
                 logger.error(
-                    f"Route config for {modname} missing 'endpoint' or 'params_class': {route_config}"
+                    f"Route config for {modname} missing 'endpoint' or 'params_class': {route_config}",
                 )
                 continue
 
             tool_endpoint_func = create_tool_endpoint(
-                params_class, use_form, tool_name_default
+                params_class,
+                use_form,
+                tool_name_default,
             )
             self.app.post(endpoint)(tool_endpoint_func)
             logger.info(f"Registered route {endpoint} for tool {modname}")

@@ -1,6 +1,0 @@
-enabled: true
-packages:
-    - moviepy
-    - webvtt-py
-    - edge-tts
-    - loguru
