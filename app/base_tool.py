@@ -19,3 +19,11 @@ class BaseMCPTool(ABC):
         arguments: dict,
     ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
         """Call a tool by name with given arguments."""
+
+    @abstractmethod
+    def get_route_config(self) -> list[dict]:
+        """Get route configurations for this tool.
+
+        Returns:
+            list[dict]: List of configurations containing 'endpoint', 'params_class', etc.
+        """

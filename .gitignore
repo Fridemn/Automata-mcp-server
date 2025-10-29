@@ -1,6 +1,13 @@
 .vscode/
 __pycache__/
-*.pyc
 docs/
+dashboard/.vscode/
+reference/
+
+*.pyc
 .env
 uv.lock
+poetry.lock
+
+openapi.json
+data/dist/
