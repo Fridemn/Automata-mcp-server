@@ -16,10 +16,12 @@ from fastapi import (
     Header,
     HTTPException,
     Request,
+    Response,
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer
 from fastapi_mcp import FastApiMCP
 from loguru import logger
 from pydantic import BaseModel
@@ -60,14 +62,47 @@ class AutomataMCPServer:
             version="1.0.0",
         )
 
-        # Add CORS middleware
+        # Add CORS middleware with secure defaults
+        allowed_origins = os.getenv(
+            "ALLOWED_ORIGINS",
+            "http://localhost:3000,http://localhost:5173",
+        )
+        allowed_origins_list = [
+            origin.strip() for origin in allowed_origins.split(",") if origin.strip()
+        ]
+
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],  # Allows all origins
+            allow_origins=allowed_origins_list,  # Only allow specified origins
             allow_credentials=True,
-            allow_methods=["*"],  # Allows all methods
-            allow_headers=["*"],  # Allows all headers
+            allow_methods=["GET", "POST", "OPTIONS"],  # Only allow necessary methods
+            allow_headers=[
+                "X-API-Key",
+                "Content-Type",
+                "Authorization",
+            ],  # Only allow necessary headers
         )
+
+        # Add security headers middleware
+        @self.app.middleware("http")
+        async def add_security_headers(request: Request, call_next):
+            """Add security headers to all responses."""
+            response = await call_next(request)
+
+            # Security headers
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["X-XSS-Protection"] = "1; mode=block"
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+            # Remove server header for security
+            if "Server" in response.headers:
+                del response.headers["Server"]
+
+            return response
 
         self.tools = {}
         self.api_key = os.getenv("AUTOMATA_API_KEY")  # 从环境变量获取API key
@@ -95,6 +130,33 @@ class AutomataMCPServer:
         self.app.include_router(
             create_router(self.authenticate, lambda: len(self.tools), self.tools),
         )
+
+        # 验证安全配置
+        self._validate_security_config()
+
+    def _validate_security_config(self):
+        """验证安全配置"""
+        # 检查API key配置
+        if not self.api_key:
+            logger.warning(
+                "SECURITY: No API key configured. Consider setting AUTOMATA_API_KEY environment variable.",
+            )
+
+        # 检查CORS配置
+        allowed_origins = os.getenv(
+            "ALLOWED_ORIGINS",
+            "http://localhost:3000,http://localhost:5173",
+        )
+        if "*" in allowed_origins:
+            logger.warning(
+                "SECURITY: CORS allows all origins. Consider restricting ALLOWED_ORIGINS.",
+            )
+
+        # 检查调试模式
+        if os.getenv("DEBUG", "false").lower() == "true":
+            logger.warning(
+                "SECURITY: Debug mode is enabled. Sensitive information may be exposed in error responses.",
+            )
 
     @with_exception_handling("dependency_installation")
     def install_dependencies_for_enabled_tools(self):
@@ -518,10 +580,26 @@ class AutomataMCPServer:
             logger.info(f"Registered route {endpoint} for tool {modname}")
 
     def authenticate(self, api_key: str) -> bool:
-        """Authenticate using API key."""
+        """Authenticate using API key with enhanced security."""
+        # If no API key is configured, allow access (development mode)
         if not self.api_key:
-            return True  # No API key required if not set
-        return api_key == self.api_key
+            logger.warning("No API key configured - allowing unauthenticated access")
+            return True
+
+        # Validate API key format (basic security check)
+        if not api_key or not isinstance(api_key, str):
+            logger.warning("Invalid API key format")
+            return False
+
+        # Check API key length (prevent timing attacks with very short keys)
+        if len(api_key.strip()) < 8:
+            logger.warning("API key too short")
+            return False
+
+        # Use constant-time comparison to prevent timing attacks
+        import hmac
+
+        return hmac.compare_digest(api_key.strip(), self.api_key.strip())
 
 
 def create_app() -> FastAPI:
@@ -541,19 +619,32 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def general_error_handler(request: Request, exc: Exception):
-        """处理未捕获的异常"""
+        """处理未捕获的异常，防止信息泄露"""
+        # 记录详细错误信息到日志
         error_info = handle_exception(
             exc,
             {
                 "url": str(request.url),
                 "method": request.method,
                 "client_ip": request.client.host if request.client else None,
+                "user_agent": request.headers.get("User-Agent", "Unknown"),
             },
         )
 
+        # 返回安全的错误响应，不包含敏感信息
+        safe_error = {
+            "error_code": "InternalServerError",
+            "message": "An internal server error occurred",
+            "timestamp": error_info.get("timestamp", None),
+        }
+
+        # 在开发模式下包含更多信息
+        if os.getenv("DEBUG", "false").lower() == "true":
+            safe_error["details"] = error_info.get("details", {})
+
         return JSONResponse(
             status_code=500,
-            content={"error": error_info},
+            content={"error": safe_error},
         )
 
     return app
