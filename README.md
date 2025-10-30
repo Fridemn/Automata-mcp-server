@@ -24,6 +24,12 @@ uv sync
 pip install -r requirements.txt
 ```
 
+**📝 依赖管理说明**：
+- 所有依赖在 `pyproject.toml` 中管理
+- `requirements.txt` 由 `pyproject.toml` 自动生成
+- Git pre-commit 钩子会自动同步两个文件
+- 详见：[scripts/README.md](scripts/README.md)
+
 ### 2. 配置环境变量
 
 复制示例配置文件并修改：

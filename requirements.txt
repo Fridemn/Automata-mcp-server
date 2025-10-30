@@ -1,14 +1,21 @@
-fastapi==0.119.1
-uvicorn==0.38.0
-mcp==1.18.0
-pydantic==2.11.7
-requests==2.31.0
-python-dotenv==1.0.0
-PyYAML==6.0.1
-loguru==0.7.2
-playwright>=1.55.0
-playwright-stealth>=2.0.0
+# Auto-generated from pyproject.toml
+# DO NOT EDIT MANUALLY - Run scripts/sync_deps.py instead
+
+edge-tts>=7.2.3,<8.0.0
 fastapi-mcp
-opencv-python
-pillow
-numpy
+fastapi==0.119.1
+loguru>=0.7.0
+mcp==1.18.0
+moviepy==1.0.3
+numpy>=2.2.6
+opencv-python>=4.11.0.86
+pillow>=12.0.0
+playwright-stealth>=2.0.0,<3.0.0
+playwright>=1.55.0,<2.0.0
+pydantic==2.11.7
+pymediainfo>=7.0.1
+python-dotenv==1.0.0
+pyyaml>=6.0.3
+requests==2.31.0
+uvicorn==0.38.0
+webvtt-py>=0.5.1,<0.6.0
