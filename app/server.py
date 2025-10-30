@@ -383,14 +383,26 @@ def create_app() -> FastAPI:
     return server.app
 
 
+# 创建全局 app 实例供 uvicorn 热重载使用
+app = create_app()
+
+
 def main():
     """Main entry point for the Automata MCP Server."""
 
-    server = AutomataMCPServer()
-    host = server.host
-    port = int(server.port)
+    # 从环境变量读取配置
+    load_dotenv()
+    host = os.getenv("HOST")
+    port = int(os.getenv("PORT"))
 
-    uvicorn.run(server.app, host=host, port=port)
+    # 启用热重载功能，当代码文件发生变化时自动重启服务器
+    uvicorn.run(
+        "app.server:app",
+        host=host,
+        port=port,
+        reload=True,
+        reload_includes=["**/*.py"],  # 监听所有 Python 文件的变化
+    )
 
 
 if __name__ == "__main__":

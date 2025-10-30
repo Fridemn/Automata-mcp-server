@@ -2,9 +2,9 @@ import asyncio
 from typing import Sequence
 from urllib.parse import urlparse, urlunparse
 
+import html2text
 import httpx
-import markdownify
-import readabilipy.simple_json
+from bs4 import BeautifulSoup
 from mcp.shared.exceptions import McpError
 from mcp.types import (
     INTERNAL_ERROR,
@@ -39,16 +39,57 @@ async def extract_content_from_html(html: str) -> str:
 
 def _extract_content_from_html_sync(html: str) -> str:
     """Synchronous version of HTML content extraction."""
-    ret = readabilipy.simple_json.simple_json_from_html_string(
-        html,
-        use_readability=True,
-    )
-    if not ret["content"]:
-        return "<error>Page failed to be simplified from HTML</error>"
-    return markdownify.markdownify(
-        ret["content"],
-        heading_style=markdownify.ATX,
-    )
+    try:
+        # 使用 BeautifulSoup 解析 HTML
+        soup = BeautifulSoup(html, "html.parser")
+
+        # 移除 script 和 style 标签
+        for script in soup(["script", "style"]):
+            script.decompose()
+
+        # 尝试找到主要内容区域
+        content_selectors = [
+            "main",
+            '[role="main"]',
+            ".content",
+            ".post-content",
+            ".entry-content",
+            ".article-content",
+            "#content",
+            "#main",
+            "article",
+        ]
+
+        content = None
+        for selector in content_selectors:
+            content = soup.select_one(selector)
+            if content:
+                break
+
+        # 如果没找到特定内容区域，使用 body
+        if not content:
+            content = soup.body or soup
+
+        # 转换为文本
+        text = content.get_text(separator="\n", strip=True)
+
+        # 如果文本太短，可能是提取失败，返回错误
+        if len(text) < 100:
+            return "<error>Page failed to be simplified from HTML</error>"
+
+        # 使用 html2text 转换为 markdown
+        h = html2text.HTML2Text()
+        h.ignore_links = False
+        h.ignore_images = False
+        h.ignore_tables = False
+        h.body_width = 0  # 不限制宽度
+
+        markdown_content = h.handle(str(content))
+
+        return markdown_content.strip()
+
+    except Exception as e:
+        return f"<error>Failed to extract content from HTML: {e}</error>"
 
 
 def get_robots_txt_url(url: str) -> str:
@@ -152,6 +193,22 @@ async def fetch_url(
 
         page_raw = response.text
 
+    # 确保内容是 UTF-8 编码，避免 Windows 上的编码问题
+    if response.encoding != "utf-8":
+        try:
+            page_raw = response.content.decode("utf-8")
+        except UnicodeDecodeError:
+            # 如果 UTF-8 解码失败，尝试其他常见编码
+            for encoding in ["gbk", "gb2312", "iso-8859-1"]:
+                try:
+                    page_raw = response.content.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            else:
+                # 如果所有编码都失败，使用错误替换
+                page_raw = response.content.decode("utf-8", errors="replace")
+
     content_type = response.headers.get("content-type", "")
     is_page_html = (
         "<html" in page_raw[:100] or "text/html" in content_type or not content_type
@@ -194,7 +251,7 @@ class FetchTool(BaseMCPTool):
             {
                 "endpoint": "/tools/fetch",
                 "params_class": FetchParams,
-            }
+            },
         ]
 
     async def list_tools(self) -> list[Tool]:
