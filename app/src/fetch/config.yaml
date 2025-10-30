@@ -1,7 +1,9 @@
 enabled: true
+description: "通用网页内容获取工具，用于抓取和解析网页内容"
+usage: "传入 url (网页URL), max_length (最大字符数，默认5000), start_index (起始索引，默认0), raw (是否获取原始HTML，默认false)"
 packages:
-  - requests
-  - httpx
-  - markdownify
-  - readabilipy
-  - protego
+  - "requests==2.31.0"
+  - "httpx==0.27.2"
+  - "markdownify==0.14.1"
+  - "readabilipy==0.2.0"
+  - "protego==0.3.1"
