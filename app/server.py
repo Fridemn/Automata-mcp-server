@@ -8,13 +8,31 @@ from pathlib import Path
 import uvicorn
 import yaml
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
 from loguru import logger
 from pydantic import BaseModel
 
 from .base_tool import BaseMCPTool
+from .exceptions import (
+    AutomataError,
+    ConfigurationError,
+    DependencyInstallError,
+    ToolLoadError,
+    handle_exception,
+    with_exception_handling,
+)
 from .routers import create_router
 
 
@@ -78,141 +96,270 @@ class AutomataMCPServer:
             create_router(self.authenticate, lambda: len(self.tools), self.tools),
         )
 
+    @with_exception_handling("dependency_installation")
     def install_dependencies_for_enabled_tools(self):
-        """Install dependencies for all tools."""
+        """Install dependencies for all tools with improved error handling."""
         for tools_dir in self.tools_dirs:
-            if not tools_dir.exists():
-                logger.warning(
-                    f"Tools directory {tools_dir} does not exist, skipping dependency installation",
-                )
+            self._install_dependencies_for_directory_safe(tools_dir)
+
+    def _install_dependencies_for_directory_safe(self, tools_dir: Path):
+        """安全地为目录安装依赖，处理异常"""
+        try:
+            self._validate_tools_directory(tools_dir)
+            self._install_dependencies_for_directory(tools_dir)
+        except Exception as e:
+            # 继续处理其他目录，但记录错误
+            handle_exception(e, {"tools_dir": str(tools_dir)})
+
+    def _validate_tools_directory(self, tools_dir: Path):
+        """验证工具目录"""
+        if not tools_dir.exists():
+            error_msg = f"Tools directory does not exist: {tools_dir}"
+            raise ConfigurationError(
+                error_msg,
+                details={"tools_dir": str(tools_dir)},
+            )
+
+        if not tools_dir.is_dir():
+            error_msg = f"Path is not a directory: {tools_dir}"
+            raise ConfigurationError(
+                error_msg,
+                details={"tools_dir": str(tools_dir)},
+            )
+
+    def _install_dependencies_for_directory(self, tools_dir: Path):
+        """为指定目录安装依赖"""
+        for item in tools_dir.iterdir():
+            if not (item.is_dir() and (item / "__init__.py").exists()):
                 continue
 
-            if not tools_dir.is_dir():
-                logger.warning(
-                    f"Tools directory {tools_dir} is not a directory, skipping dependency installation",
-                )
+            modname = item.name
+            try:
+                self._install_tool_dependencies(item, modname)
+            except Exception as e:
+                # 继续处理其他工具，但记录错误
+                handle_exception(e, {"tool": modname, "tools_dir": str(tools_dir)})
                 continue
 
-            # Iterate through Python packages in tools directory
-            for item in tools_dir.iterdir():
-                if item.is_dir() and (item / "__init__.py").exists():
-                    modname = item.name
-                    config_path = item / "config.yaml"
-                    config = {}
-                    if config_path.exists():
-                        try:
-                            with open(config_path, encoding="utf-8") as f:
-                                config = yaml.safe_load(f)
-                        except (
-                            yaml.YAMLError,
-                            FileNotFoundError,
-                        ) as e:
-                            logger.error(
-                                f"Failed to load config for tool {modname}: {e}",
-                            )
-                            continue
+    def _install_tool_dependencies(self, tool_dir: Path, modname: str):
+        """安装单个工具的依赖"""
+        config_path = tool_dir / "config.yaml"
+        config = self._load_tool_config(config_path, modname)
 
-                    packages = config.get("packages", [])
-                    if packages:
-                        logger.info(
-                            f"Installing packages for tool {modname}: {packages}",
-                        )
-                        try:
-                            # Use uv pip install to install packages
-                            cmd = ["uv", "pip", "install", *packages]
-                            result = subprocess.run(  # noqa: S603
-                                cmd,
-                                capture_output=True,
-                                text=True,
-                                cwd=tools_dir.parent.parent,
-                                check=False,
-                            )
-                            if result.returncode != 0:
-                                logger.error(
-                                    f"Failed to install packages for {modname}: {result.stderr}",
-                                )
-                                continue
-                            logger.info(
-                                f"Successfully installed packages for {modname}",
-                            )
-                        except Exception as e:
-                            logger.warning(
-                                f"Error installing packages for {modname}: {e}",
-                            )
-                            continue
+        packages = config.get("packages", [])
+        if not packages:
+            return
 
+        logger.info(f"Installing packages for tool {modname}: {packages}")
+
+        try:
+            self._run_pip_install(packages, tool_dir.parent.parent)
+            logger.info(f"Successfully installed packages for {modname}")
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Failed to install packages for {modname}"
+            raise DependencyInstallError(
+                error_msg,
+                details={
+                    "tool": modname,
+                    "packages": packages,
+                    "return_code": e.returncode,
+                    "stderr": e.stderr,
+                },
+            )
+        except subprocess.TimeoutExpired:
+            error_msg = f"Package installation timed out for {modname}"
+            raise DependencyInstallError(
+                error_msg,
+                details={"tool": modname, "packages": packages},
+            )
+        except Exception as e:
+            error_msg = f"Unexpected error installing packages for {modname}: {e}"
+            raise DependencyInstallError(
+                error_msg,
+                details={"tool": modname, "packages": packages},
+            )
+
+    def _load_tool_config(self, config_path: Path, modname: str) -> dict:
+        """加载工具配置"""
+        if not config_path.exists():
+            return {}
+
+        try:
+            with open(config_path, encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+        except yaml.YAMLError as e:
+            error_msg = f"Invalid YAML in config file for tool {modname}"
+            raise ConfigurationError(
+                error_msg,
+                details={
+                    "tool": modname,
+                    "config_path": str(config_path),
+                    "yaml_error": str(e),
+                },
+            )
+        except OSError as e:
+            error_msg = f"Cannot read config file for tool {modname}"
+            raise ConfigurationError(
+                error_msg,
+                details={
+                    "tool": modname,
+                    "config_path": str(config_path),
+                    "io_error": str(e),
+                },
+            )
+
+    def _run_pip_install(self, packages: list[str], cwd: Path):
+        """运行 pip 安装命令"""
+        # 验证包名安全性（基本检查）
+        if not packages:
+            return
+
+        for package in packages:
+            if not isinstance(package, str) or not package.strip():
+                error_msg = f"Invalid package name: {package}"
+                raise ValueError(error_msg)
+
+        cmd = ["uv", "pip", "install", *packages]
+        # S603: subprocess call is safe because packages are validated above
+        subprocess.run(  # noqa: S603
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=300,  # 5分钟超时
+            check=True,
+        )
+
+    @with_exception_handling("tool_discovery")
     def discover_tools(self):
-        """Automatically discover tools in the configured tools directories."""
+        """Automatically discover tools with improved error handling."""
         for tools_dir in self.tools_dirs:
-            if not tools_dir.exists():
-                logger.warning(
-                    f"Tools directory {tools_dir} does not exist, skipping tool discovery",
-                )
+            self._discover_tools_in_directory_safe(tools_dir)
+
+    def _discover_tools_in_directory_safe(self, tools_dir: Path):
+        """安全地在目录中发现工具，处理异常"""
+        try:
+            self._validate_tools_directory(tools_dir)
+            self._discover_tools_in_directory(tools_dir)
+        except Exception as e:
+            handle_exception(e, {"tools_dir": str(tools_dir)})
+
+    def _discover_tools_in_directory(self, tools_dir: Path):
+        """在指定目录中发现工具"""
+        for item in tools_dir.iterdir():
+            if not (item.is_dir() and (item / "__init__.py").exists()):
                 continue
 
-            if not tools_dir.is_dir():
-                logger.warning(
-                    f"Tools directory {tools_dir} is not a directory, skipping tool discovery",
-                )
+            modname = item.name
+            try:
+                self._load_and_register_tool(item, modname, tools_dir)
+            except Exception as e:
+                handle_exception(e, {"tool": modname, "tools_dir": str(tools_dir)})
                 continue
 
-            # Iterate through Python packages in tools directory
-            for item in tools_dir.iterdir():
-                if item.is_dir() and (item / "__init__.py").exists():
-                    modname = item.name
-                    # config.yaml is optional for discovery; we don't need to load it here
+    def _load_and_register_tool(self, tool_dir: Path, modname: str, tools_dir: Path):
+        """加载并注册工具"""
+        tool_file = tool_dir / f"{modname}_tool.py"
+        if not tool_file.exists():
+            error_msg = f"Tool file not found: {tool_file}"
+            raise ToolLoadError(
+                error_msg,
+                details={"tool": modname, "expected_file": str(tool_file)},
+            )
 
-                    # Import the module
-                    tool_file = item / f"{modname}_tool.py"
-                    if not tool_file.exists():
-                        logger.warning(
-                            f"Tool file {tool_file} not found for tool {modname}, skipping",
-                        )
-                        continue
+        try:
+            # 计算模块路径
+            app_dir = Path(__file__).parent
+            relative_path = tools_dir.relative_to(app_dir)
+            module_path = f"app.{relative_path}.{modname}".replace("/", ".").replace(
+                "\\",
+                ".",
+            )
 
-                    try:
-                        # Import the module - calculate relative path from app package
-                        app_dir = Path(__file__).parent
-                        relative_path = tools_dir.relative_to(app_dir)
-                        module_path = f"app.{relative_path}.{modname}".replace(
-                            "/",
-                            ".",
-                        ).replace("\\", ".")
-                        module = importlib.import_module(module_path)
-                        # Get the tool class (assume it's named <Modname>Tool)
-                        tool_class_name = (
-                            "".join(word.capitalize() for word in modname.split("_"))
-                            + "Tool"
-                        )
-                        logger.info(
-                            f"Looking for class {tool_class_name} in module {module_path}",
-                        )
-                        if not hasattr(module, tool_class_name):
-                            logger.error(
-                                f"Module {module_path} does not have attribute {tool_class_name}, available: {dir(module)}",
-                            )
-                            continue
-                        tool_class = getattr(module, tool_class_name)
-                        # Instantiate the tool
-                        tool_instance = tool_class()
-                        # Register the tool
-                        self.tools[modname] = tool_instance
-                        # Register routes for the tool
-                        self.register_tool_routes(tool_instance, modname)
-                        logger.info(
-                            f"Tool {modname} discovered and registered successfully",
-                        )
-                    except (
-                        ImportError,
-                        AttributeError,
-                        yaml.YAMLError,
-                        FileNotFoundError,
-                    ) as e:
-                        logger.error(f"Failed to load tool {modname}: {e}")
-                    except Exception as e:
-                        logger.exception(
-                            f"Unexpected error loading tool {modname}: {e}",
-                        )
+            # 导入模块
+            module = importlib.import_module(module_path)
+
+            # 获取工具类
+            tool_class_name = (
+                "".join(word.capitalize() for word in modname.split("_")) + "Tool"
+            )
+
+            tool_class = self._get_tool_class(
+                module,
+                tool_class_name,
+                module_path,
+                modname,
+            )
+            self._validate_tool_class(tool_class, tool_class_name, modname)
+
+            # 实例化工具
+            tool_instance = tool_class()
+
+            # 注册工具
+            self.tools[modname] = tool_instance
+            self.register_tool_routes(tool_instance, modname)
+
+            logger.info(f"Tool {modname} discovered and registered successfully")
+
+        except ImportError as e:
+            error_msg = f"Failed to import tool module {module_path}"
+            raise ToolLoadError(
+                error_msg,
+                details={
+                    "tool": modname,
+                    "module_path": module_path,
+                    "import_error": str(e),
+                },
+            )
+        except AttributeError as e:
+            error_msg = f"Failed to load tool class from module {module_path}"
+            raise ToolLoadError(
+                error_msg,
+                details={
+                    "tool": modname,
+                    "module_path": module_path,
+                    "attribute_error": str(e),
+                },
+            )
+        except Exception as e:
+            error_msg = f"Unexpected error loading tool {modname}"
+            raise ToolLoadError(
+                error_msg,
+                details={"tool": modname, "error": str(e)},
+            )
+
+    def _get_tool_class(
+        self,
+        module,
+        tool_class_name: str,
+        module_path: str,
+        modname: str,
+    ):
+        """获取工具类，如果不存在则抛出异常"""
+        if not hasattr(module, tool_class_name):
+            available_classes = [name for name in dir(module) if name.endswith("Tool")]
+            error_msg = (
+                f"Tool class {tool_class_name} not found in module {module_path}"
+            )
+            raise ToolLoadError(
+                error_msg,
+                details={
+                    "tool": modname,
+                    "module_path": module_path,
+                    "expected_class": tool_class_name,
+                    "available_classes": available_classes,
+                },
+            )
+        return getattr(module, tool_class_name)
+
+    def _validate_tool_class(self, tool_class, tool_class_name: str, modname: str):
+        """验证工具类是否继承自 BaseMCPTool"""
+        if not issubclass(tool_class, BaseMCPTool):
+            error_msg = f"Tool class {tool_class_name} must inherit from BaseMCPTool"
+            raise ToolLoadError(
+                error_msg,
+                details={"tool": modname, "class_name": tool_class_name},
+            )
 
     def register_tool_routes(self, tool_instance: BaseMCPTool, modname: str):
         """Register FastAPI routes for the tool."""
@@ -380,7 +527,36 @@ class AutomataMCPServer:
 def create_app() -> FastAPI:
     """Create and return the FastAPI application."""
     server = AutomataMCPServer()
-    return server.app
+    app = server.app
+
+    # 添加全局异常处理器
+    @app.exception_handler(AutomataError)
+    async def automata_error_handler(_request: Request, exc: AutomataError):
+        """处理自定义异常"""
+        error_info = exc.to_dict()
+        return JSONResponse(
+            status_code=400,
+            content={"error": error_info},
+        )
+
+    @app.exception_handler(Exception)
+    async def general_error_handler(request: Request, exc: Exception):
+        """处理未捕获的异常"""
+        error_info = handle_exception(
+            exc,
+            {
+                "url": str(request.url),
+                "method": request.method,
+                "client_ip": request.client.host if request.client else None,
+            },
+        )
+
+        return JSONResponse(
+            status_code=500,
+            content={"error": error_info},
+        )
+
+    return app
 
 
 # 创建全局 app 实例供 uvicorn 热重载使用
