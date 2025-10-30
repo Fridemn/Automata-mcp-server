@@ -2,9 +2,6 @@ import importlib
 import inspect
 import os
 import subprocess
-import threading
-import time
-import webbrowser
 from pathlib import Path
 
 # Core server module for Automata MCP Server
@@ -13,7 +10,6 @@ import yaml
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 from loguru import logger
 from pydantic import BaseModel
@@ -72,14 +68,6 @@ class AutomataMCPServer:
         # Initialize FastApiMCP
         self.mcp = FastApiMCP(self.app)
         self.mcp.mount_http()
-
-        # Mount data directory for serving generated images and other files
-        data_path = Path(__file__).parent.parent / "data"
-        self.app.mount(
-            "/data",
-            StaticFiles(directory=str(data_path)),
-            name="data",
-        )
 
         # Include routers
         self.app.include_router(
@@ -391,14 +379,6 @@ def main():
     server = AutomataMCPServer()
     host = server.host
     port = int(server.port)
-
-    # Open browser after server starts
-    def open_browser():
-        time.sleep(2)  # Wait for server to fully start
-        url = f"http://{host}:{port}/dashboard"
-        webbrowser.open(url)
-
-    threading.Thread(target=open_browser, daemon=True).start()
 
     uvicorn.run(server.app, host=host, port=port)
 
