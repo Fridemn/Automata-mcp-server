@@ -11,3 +11,4 @@ poetry.lock
 
 openapi.json
 data/dist/
+app/AutoUp-MCP-Extension

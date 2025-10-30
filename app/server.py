@@ -63,6 +63,10 @@ class AutomataMCPServer:
             self.tools_dir = Path(tools_dir_env)
         else:
             self.tools_dir = Path(__file__).parent / tools_dir_env
+        self.extension_dir = Path(__file__).parent / "AutoUp-MCP-Extension"
+        self.tools_dirs = [self.tools_dir]
+        if self.extension_dir.exists() and self.extension_dir.is_dir():
+            self.tools_dirs.append(self.extension_dir)
         self.install_dependencies_for_enabled_tools()
         self.discover_tools()
         # Initialize FastApiMCP
@@ -76,133 +80,139 @@ class AutomataMCPServer:
 
     def install_dependencies_for_enabled_tools(self):
         """Install dependencies for all tools."""
-        if not self.tools_dir.exists():
-            logger.warning(
-                f"Tools directory {self.tools_dir} does not exist, skipping dependency installation",
-            )
-            return
+        for tools_dir in self.tools_dirs:
+            if not tools_dir.exists():
+                logger.warning(
+                    f"Tools directory {tools_dir} does not exist, skipping dependency installation",
+                )
+                continue
 
-        if not self.tools_dir.is_dir():
-            logger.warning(
-                f"Tools directory {self.tools_dir} is not a directory, skipping dependency installation",
-            )
-            return
+            if not tools_dir.is_dir():
+                logger.warning(
+                    f"Tools directory {tools_dir} is not a directory, skipping dependency installation",
+                )
+                continue
 
-        # Iterate through Python packages in tools directory
-        for item in self.tools_dir.iterdir():
-            if item.is_dir() and (item / "__init__.py").exists():
-                modname = item.name
-                config_path = item / "config.yaml"
-                config = {}
-                if config_path.exists():
+            # Iterate through Python packages in tools directory
+            for item in tools_dir.iterdir():
+                if item.is_dir() and (item / "__init__.py").exists():
+                    modname = item.name
+                    config_path = item / "config.yaml"
+                    config = {}
+                    if config_path.exists():
+                        try:
+                            with open(config_path, encoding="utf-8") as f:
+                                config = yaml.safe_load(f)
+                        except (
+                            yaml.YAMLError,
+                            FileNotFoundError,
+                        ) as e:
+                            logger.error(
+                                f"Failed to load config for tool {modname}: {e}",
+                            )
+                            continue
+
+                    packages = config.get("packages", [])
+                    if packages:
+                        logger.info(
+                            f"Installing packages for tool {modname}: {packages}",
+                        )
+                        try:
+                            # Use uv pip install to install packages
+                            cmd = ["uv", "pip", "install", *packages]
+                            result = subprocess.run(  # noqa: S603
+                                cmd,
+                                capture_output=True,
+                                text=True,
+                                cwd=tools_dir.parent.parent,
+                                check=False,
+                            )
+                            if result.returncode != 0:
+                                logger.error(
+                                    f"Failed to install packages for {modname}: {result.stderr}",
+                                )
+                                continue
+                            logger.info(
+                                f"Successfully installed packages for {modname}",
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"Error installing packages for {modname}: {e}",
+                            )
+                            continue
+
+    def discover_tools(self):
+        """Automatically discover tools in the configured tools directories."""
+        for tools_dir in self.tools_dirs:
+            if not tools_dir.exists():
+                logger.warning(
+                    f"Tools directory {tools_dir} does not exist, skipping tool discovery",
+                )
+                continue
+
+            if not tools_dir.is_dir():
+                logger.warning(
+                    f"Tools directory {tools_dir} is not a directory, skipping tool discovery",
+                )
+                continue
+
+            # Iterate through Python packages in tools directory
+            for item in tools_dir.iterdir():
+                if item.is_dir() and (item / "__init__.py").exists():
+                    modname = item.name
+                    # config.yaml is optional for discovery; we don't need to load it here
+
+                    # Import the module
+                    tool_file = item / f"{modname}_tool.py"
+                    if not tool_file.exists():
+                        logger.warning(
+                            f"Tool file {tool_file} not found for tool {modname}, skipping",
+                        )
+                        continue
+
                     try:
-                        with open(config_path, encoding="utf-8") as f:
-                            config = yaml.safe_load(f)
+                        # Import the module - calculate relative path from app package
+                        app_dir = Path(__file__).parent
+                        relative_path = tools_dir.relative_to(app_dir)
+                        module_path = f"app.{relative_path}.{modname}".replace(
+                            "/",
+                            ".",
+                        ).replace("\\", ".")
+                        module = importlib.import_module(module_path)
+                        # Get the tool class (assume it's named <Modname>Tool)
+                        tool_class_name = (
+                            "".join(word.capitalize() for word in modname.split("_"))
+                            + "Tool"
+                        )
+                        logger.info(
+                            f"Looking for class {tool_class_name} in module {module_path}",
+                        )
+                        if not hasattr(module, tool_class_name):
+                            logger.error(
+                                f"Module {module_path} does not have attribute {tool_class_name}, available: {dir(module)}",
+                            )
+                            continue
+                        tool_class = getattr(module, tool_class_name)
+                        # Instantiate the tool
+                        tool_instance = tool_class()
+                        # Register the tool
+                        self.tools[modname] = tool_instance
+                        # Register routes for the tool
+                        self.register_tool_routes(tool_instance, modname)
+                        logger.info(
+                            f"Tool {modname} discovered and registered successfully",
+                        )
                     except (
+                        ImportError,
+                        AttributeError,
                         yaml.YAMLError,
                         FileNotFoundError,
                     ) as e:
-                        logger.error(f"Failed to load config for tool {modname}: {e}")
-                        continue
-
-                packages = config.get("packages", [])
-                if packages:
-                    logger.info(
-                        f"Installing packages for tool {modname}: {packages}",
-                    )
-                    try:
-                        # Use uv pip install to install packages
-                        cmd = ["uv", "pip", "install", *packages]
-                        result = subprocess.run(  # noqa: S603
-                            cmd,
-                            capture_output=True,
-                            text=True,
-                            cwd=self.tools_dir.parent.parent,
-                            check=False,
-                        )
-                        if result.returncode != 0:
-                            logger.error(
-                                f"Failed to install packages for {modname}: {result.stderr}",
-                            )
-                            continue
-                        logger.info(
-                            f"Successfully installed packages for {modname}",
-                        )
+                        logger.error(f"Failed to load tool {modname}: {e}")
                     except Exception as e:
-                        logger.warning(
-                            f"Error installing packages for {modname}: {e}",
+                        logger.exception(
+                            f"Unexpected error loading tool {modname}: {e}",
                         )
-                        continue
-
-    def discover_tools(self):
-        """Automatically discover tools in the configured tools directory."""
-        if not self.tools_dir.exists():
-            logger.warning(
-                f"Tools directory {self.tools_dir} does not exist, skipping tool discovery",
-            )
-            return
-
-        if not self.tools_dir.is_dir():
-            logger.warning(
-                f"Tools directory {self.tools_dir} is not a directory, skipping tool discovery",
-            )
-            return
-
-        # Iterate through Python packages in tools directory
-        for item in self.tools_dir.iterdir():
-            if item.is_dir() and (item / "__init__.py").exists():
-                modname = item.name
-                # config.yaml is optional for discovery; we don't need to load it here
-
-                # Import the module
-                tool_file = item / f"{modname}_tool.py"
-                if not tool_file.exists():
-                    logger.warning(
-                        f"Tool file {tool_file} not found for tool {modname}, skipping",
-                    )
-                    continue
-
-                try:
-                    # Import the module - calculate relative path from app package
-                    app_dir = Path(__file__).parent
-                    relative_path = self.tools_dir.relative_to(app_dir)
-                    module_path = f"app.{relative_path}.{modname}".replace(
-                        "/",
-                        ".",
-                    ).replace("\\", ".")
-                    module = importlib.import_module(module_path)
-                    # Get the tool class (assume it's named <Modname>Tool)
-                    tool_class_name = (
-                        "".join(word.capitalize() for word in modname.split("_"))
-                        + "Tool"
-                    )
-                    logger.info(
-                        f"Looking for class {tool_class_name} in module {module_path}",
-                    )
-                    if not hasattr(module, tool_class_name):
-                        logger.error(
-                            f"Module {module_path} does not have attribute {tool_class_name}, available: {dir(module)}",
-                        )
-                        continue
-                    tool_class = getattr(module, tool_class_name)
-                    # Instantiate the tool
-                    tool_instance = tool_class()
-                    # Register the tool
-                    self.tools[modname] = tool_instance
-                    # Register routes for the tool
-                    self.register_tool_routes(tool_instance, modname)
-                    logger.info(
-                        f"Tool {modname} discovered and registered successfully",
-                    )
-                except (
-                    ImportError,
-                    AttributeError,
-                    yaml.YAMLError,
-                    FileNotFoundError,
-                ) as e:
-                    logger.error(f"Failed to load tool {modname}: {e}")
-                except Exception as e:
-                    logger.exception(f"Unexpected error loading tool {modname}: {e}")
 
     def register_tool_routes(self, tool_instance: BaseMCPTool, modname: str):
         """Register FastAPI routes for the tool."""
