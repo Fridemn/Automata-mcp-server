@@ -78,6 +78,12 @@ class AutomataMCPServer:
             title="Automata MCP Server",
             description="A centralized MCP server using FastAPI with plugin architecture",
             version="1.0.0",
+            servers=[
+                {
+                    "url": "http://localhost:8000",
+                    "description": "Development server",
+                },
+            ],
         )
 
         # Add CORS middleware with secure defaults
@@ -539,7 +545,8 @@ class AutomataMCPServer:
         )
 
         # 注册路由
-        self.app.post(endpoint)(tool_endpoint_func)
+        response_model = tool_instance.get_response_model()
+        self.app.post(endpoint, response_model=response_model)(tool_endpoint_func)
         logger.info(f"Registered route {endpoint} for tool {modname}")
 
     def _create_tool_endpoint(
@@ -648,18 +655,20 @@ class AutomataMCPServer:
 
             # Use the provided tool_name_default captured in closure
             tool_name = tool_name_default
-            result = await tool_instance.call_tool(
-                tool_name,
-                params_obj.model_dump(),
-            )
-            # Convert to dict for JSON response
-            return {
-                "content": [
+            try:
+                result = await tool_instance.call_tool(
+                    tool_name,
+                    params_obj.model_dump(),
+                )
+                # Convert to BaseResponse format
+                content = [
                     {"type": item.type, "text": item.text}
                     for item in result
                     if hasattr(item, "type") and hasattr(item, "text")
-                ],
-            }
+                ]
+                return {"success": True, "data": {"content": content}, "error": None}
+            except Exception as e:
+                return {"success": False, "data": None, "error": str(e)}
 
         # Set the signature on the function
         tool_endpoint.__signature__ = sig
@@ -682,18 +691,20 @@ class AutomataMCPServer:
             # params is already validated by FastAPI as the correct type
             # Use the provided tool_name_default captured in closure
             tool_name = tool_name_default
-            result = await tool_instance.call_tool(
-                tool_name,
-                params.model_dump(),
-            )
-            # Convert to dict for JSON response
-            return {
-                "content": [
+            try:
+                result = await tool_instance.call_tool(
+                    tool_name,
+                    params.model_dump(),
+                )
+                # Convert to BaseResponse format
+                content = [
                     {"type": item.type, "text": item.text}
                     for item in result
                     if hasattr(item, "type") and hasattr(item, "text")
-                ],
-            }
+                ]
+                return {"success": True, "data": {"content": content}, "error": None}
+            except Exception as e:
+                return {"success": False, "data": None, "error": str(e)}
 
         # Set the type annotation dynamically
         tool_endpoint.__annotations__["params"] = p_class

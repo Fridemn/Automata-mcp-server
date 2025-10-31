@@ -1,12 +1,21 @@
 from abc import ABC, abstractmethod
-from typing import Sequence
+from typing import Sequence, Type
 
 from mcp.types import EmbeddedResource, ImageContent, TextContent, Tool
+from pydantic import BaseModel
+
+from .schemas import BaseResponse
 
 
 class BaseMCPTool(ABC):
     def __init__(self):
         pass
+
+    def get_response_model(self) -> type[BaseResponse]:
+        """Get the response model for this tool's endpoints.
+        Can be overridden by subclasses to provide custom response models.
+        """
+        return BaseResponse
 
     @abstractmethod
     async def list_tools(self) -> list[Tool]:
