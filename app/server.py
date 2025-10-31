@@ -82,22 +82,48 @@ class AutomataMCPServer:
             or f"http://{os.getenv('HOST', 'localhost')}:{os.getenv('PORT', '8000')}"
         )
 
-        self.app = FastAPI(
-            title="Automata MCP Server",
-            description="A centralized MCP server using FastAPI with plugin architecture",
-            version="1.0.0",
-            servers=[
+        # Build servers list from environment configuration
+        servers = []
+
+        # Add localhost server (always available for local development)
+        if os.getenv("INCLUDE_LOCALHOST_SERVER", "true").lower() == "true":
+            servers.append(
+                {
+                    "url": f"http://localhost:{os.getenv('PORT', '8000')}",
+                    "description": "Local development server",
+                },
+            )
+
+        # Add 127.0.0.1 server (IP-based local access)
+        if os.getenv("INCLUDE_127_SERVER", "true").lower() == "true":
+            servers.append(
+                {
+                    "url": f"http://127.0.0.1:{os.getenv('PORT', '8000')}",
+                    "description": "Local development server (IP)",
+                },
+            )
+
+        # Add configured server URL
+        if server_url:
+            servers.append(
                 {
                     "url": server_url,
                     "description": "Development server",
                 },
-            ],
+            )
+
+        self.app = FastAPI(
+            title="Automata MCP Server",
+            description="A centralized MCP server using FastAPI with plugin architecture",
+            version="1.0.0",
+            servers=servers,
         )
 
         # Add CORS middleware with secure defaults
+        # Allow localhost, 127.0.0.1, and 0.0.0.0 for local development
         allowed_origins = os.getenv(
             "ALLOWED_ORIGINS",
-            "http://localhost:3000,http://localhost:5173",
+            "http://localhost:3000,http://localhost:5173,http://localhost:8000,http://127.0.0.1:8000,http://0.0.0.0:8000",
         )
         allowed_origins_list = [
             origin.strip() for origin in allowed_origins.split(",") if origin.strip()
@@ -112,6 +138,7 @@ class AutomataMCPServer:
                 "X-API-Key",
                 "Content-Type",
                 "Authorization",
+                "accept",
             ],  # Only allow necessary headers
         )
 
