@@ -349,20 +349,13 @@ class AutomataMCPServer:
 
         try:
             # 计算模块路径
-            app_dir = Path(__file__).parent
-            relative_path = tools_dir.relative_to(app_dir)
-            module_path = f"app.{relative_path}.{modname}".replace("/", ".").replace(
-                "\\",
-                ".",
-            )
+            module_path = self._build_module_path(tools_dir, modname)
 
             # 导入模块
             module = importlib.import_module(module_path)
 
             # 获取工具类
-            tool_class_name = (
-                "".join(word.capitalize() for word in modname.split("_")) + "Tool"
-            )
+            tool_class_name = self._build_tool_class_name(modname)
 
             tool_class = self._get_tool_class(
                 module,
@@ -408,6 +401,16 @@ class AutomataMCPServer:
                 details={"tool": modname, "error": str(e)},
             )
 
+    def _build_module_path(self, tools_dir: Path, modname: str) -> str:
+        """构建模块路径"""
+        app_dir = Path(__file__).parent
+        relative_path = tools_dir.relative_to(app_dir)
+        return f"app.{relative_path.as_posix().replace('/', '.')}.{modname}"
+
+    def _build_tool_class_name(self, modname: str) -> str:
+        """构建工具类名"""
+        return "".join(word.capitalize() for word in modname.split("_")) + "Tool"
+
     def _get_tool_class(
         self,
         module,
@@ -434,16 +437,53 @@ class AutomataMCPServer:
 
     def _validate_tool_class(self, tool_class, tool_class_name: str, modname: str):
         """验证工具类是否继承自 BaseMCPTool"""
+        if not inspect.isclass(tool_class):
+            error_msg = f"Tool {tool_class_name} is not a class"
+            raise ToolLoadError(
+                error_msg,
+                details={
+                    "tool": modname,
+                    "class_name": tool_class_name,
+                    "type": type(tool_class).__name__,
+                },
+            )
+
         if not issubclass(tool_class, BaseMCPTool):
+            # 获取所有可用的Tool类用于错误信息
+            import sys
+
+            current_module = sys.modules.get(tool_class.__module__)
+            available_tool_classes = []
+            if current_module:
+                available_tool_classes = [
+                    name
+                    for name, obj in vars(current_module).items()
+                    if inspect.isclass(obj) and name.endswith("Tool")
+                ]
+
             error_msg = f"Tool class {tool_class_name} must inherit from BaseMCPTool"
             raise ToolLoadError(
                 error_msg,
-                details={"tool": modname, "class_name": tool_class_name},
+                details={
+                    "tool": modname,
+                    "class_name": tool_class_name,
+                    "required_base": "BaseMCPTool",
+                    "available_tool_classes": available_tool_classes,
+                },
             )
 
     def register_tool_routes(self, tool_instance: BaseMCPTool, modname: str):
         """Register FastAPI routes for the tool."""
+        route_configs = self._get_route_configs(tool_instance, modname)
+        for config in route_configs:
+            self._register_single_route(tool_instance, modname, config)
 
+    def _get_route_configs(
+        self,
+        tool_instance: BaseMCPTool,
+        modname: str,
+    ) -> list[dict]:
+        """获取和验证路由配置"""
         route_configs = tool_instance.get_route_config()
         if isinstance(route_configs, dict):
             route_configs = [route_configs]
@@ -451,7 +491,65 @@ class AutomataMCPServer:
             logger.error(
                 f"Tool {modname} get_route_config must return a dict or list of dicts, got {type(route_configs)}",
             )
-            return
+            return []
+
+        # 验证和标准化配置
+        validated_configs = []
+        for route_config in route_configs:
+            if not isinstance(route_config, dict):
+                logger.error(f"Invalid route config for {modname}: {route_config}")
+                continue
+
+            # 确保必要的字段存在
+            if not route_config.get("endpoint") or not route_config.get("params_class"):
+                logger.error(
+                    f"Route config for {modname} missing 'endpoint' or 'params_class': {route_config}",
+                )
+                continue
+
+            # 设置默认值
+            normalized_config = {
+                "endpoint": route_config["endpoint"],
+                "params_class": route_config["params_class"],
+                "use_form": route_config.get("use_form", False),
+                "tool_name": route_config.get("tool_name", modname),
+            }
+            validated_configs.append(normalized_config)
+
+        return validated_configs
+
+    def _register_single_route(
+        self,
+        tool_instance: BaseMCPTool,
+        modname: str,
+        config: dict,
+    ):
+        """注册单个路由"""
+        endpoint = config["endpoint"]
+        params_class = config["params_class"]
+        use_form = config["use_form"]
+        tool_name = config["tool_name"]
+
+        # 创建端点函数
+        tool_endpoint_func = self._create_tool_endpoint(
+            params_class,
+            use_form,
+            tool_name,
+            tool_instance,
+        )
+
+        # 注册路由
+        self.app.post(endpoint)(tool_endpoint_func)
+        logger.info(f"Registered route {endpoint} for tool {modname}")
+
+    def _create_tool_endpoint(
+        self,
+        p_class,
+        use_form_flag: bool,
+        tool_name_default: str,
+        tool_instance: BaseMCPTool,
+    ):
+        """创建工具端点函数"""
 
         async def verify_api_key(
             x_api_key: str | None = Header(None, alias="X-API-Key"),
@@ -461,141 +559,145 @@ class AutomataMCPServer:
                 raise HTTPException(status_code=401, detail="Invalid API key")
             return x_api_key
 
-        def create_tool_endpoint(p_class, use_form_flag, tool_name_default):
-            if use_form_flag:
-                # For form data, create a dynamic function with proper Form parameters
+        if use_form_flag:
+            # For form data, create a dynamic function with proper Form parameters
+            return self._create_form_endpoint(
+                p_class,
+                tool_name_default,
+                tool_instance,
+                verify_api_key,
+            )
+        # For JSON data, create a simpler function
+        return self._create_json_endpoint(
+            p_class,
+            tool_name_default,
+            tool_instance,
+            verify_api_key,
+        )
 
-                # Get the fields from the params class
-                fields = p_class.model_fields
+    def _create_form_endpoint(
+        self,
+        p_class,
+        tool_name_default: str,
+        tool_instance: BaseMCPTool,
+        verify_api_key,
+    ):
+        """创建表单数据端点"""
+        # Get the fields from the params class
+        fields = p_class.model_fields
 
-                # Create parameter list for function signature
-                params = []
+        # Create parameter list for function signature
+        params = []
 
-                for field_name, field_info in fields.items():
-                    # Check if the field is UploadFile
-                    if field_info.annotation == UploadFile or (
-                        hasattr(field_info.annotation, "__origin__")
-                        and field_info.annotation.__origin__ == UploadFile
-                    ):
-                        form_func = File
-                    else:
-                        form_func = Form
+        for field_name, field_info in fields.items():
+            # Check if the field is UploadFile
+            if field_info.annotation == UploadFile or (
+                hasattr(field_info.annotation, "__origin__")
+                and field_info.annotation.__origin__ == UploadFile
+            ):
+                form_func = File
+            else:
+                form_func = Form
 
-                    if field_info.is_required():
-                        params.append(
-                            inspect.Parameter(
-                                field_name,
-                                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                                default=form_func(
-                                    ...,
-                                    description=field_info.description or "",
-                                ),
-                            ),
-                        )
-                    else:
-                        params.append(
-                            inspect.Parameter(
-                                field_name,
-                                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                                default=form_func(
-                                    field_info.default,
-                                    description=field_info.description or "",
-                                ),
-                            ),
-                        )
-
-                # Add API key parameter
+            if field_info.is_required():
                 params.append(
                     inspect.Parameter(
-                        "_api_key",
+                        field_name,
                         inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                        default=Depends(verify_api_key),
+                        default=form_func(
+                            ...,
+                            description=field_info.description or "",
+                        ),
+                    ),
+                )
+            else:
+                params.append(
+                    inspect.Parameter(
+                        field_name,
+                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                        default=form_func(
+                            field_info.default,
+                            description=field_info.description or "",
+                        ),
                     ),
                 )
 
-                # Create the function signature
-                sig = inspect.Signature(params)
+        # Add API key parameter
+        params.append(
+            inspect.Parameter(
+                "_api_key",
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=Depends(verify_api_key),
+            ),
+        )
 
-                async def tool_endpoint(**kwargs):
-                    # The function will receive form parameters directly
-                    # Separate API key from form data
-                    kwargs.pop("_api_key", None)
-                    form_data = kwargs
+        # Create the function signature
+        sig = inspect.Signature(params)
 
-                    # Validate form data with the params_class
-                    try:
-                        params_obj = p_class(**form_data)
-                    except ValueError as e:
-                        raise HTTPException(status_code=422, detail=str(e))
+        async def tool_endpoint(**kwargs):
+            # The function will receive form parameters directly
+            # Separate API key from form data
+            kwargs.pop("_api_key", None)
+            form_data = kwargs
 
-                    # Use the provided tool_name_default captured in closure
-                    tool_name = tool_name_default
-                    result = await tool_instance.call_tool(
-                        tool_name,
-                        params_obj.model_dump(),
-                    )
-                    # Convert to dict for JSON response
-                    return {
-                        "content": [
-                            {"type": item.type, "text": item.text}
-                            for item in result
-                            if hasattr(item, "type") and hasattr(item, "text")
-                        ],
-                    }
+            # Validate form data with the params_class
+            try:
+                params_obj = p_class(**form_data)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e))
 
-                # Set the signature on the function
-                tool_endpoint.__signature__ = sig
-
-                return tool_endpoint
-
-            async def tool_endpoint(
-                params,  # type: ignore
-                _api_key: str = Depends(verify_api_key),
-            ):
-                # params is already validated by FastAPI as the correct type
-                # Use the provided tool_name_default captured in closure
-                tool_name = tool_name_default
-                result = await tool_instance.call_tool(
-                    tool_name,
-                    params.model_dump(),
-                )
-                # Convert to dict for JSON response
-                return {
-                    "content": [
-                        {"type": item.type, "text": item.text}
-                        for item in result
-                        if hasattr(item, "type") and hasattr(item, "text")
-                    ],
-                }
-
-            # Set the type annotation dynamically
-            if not use_form_flag:
-                tool_endpoint.__annotations__["params"] = p_class
-            return tool_endpoint
-
-        # Register each route config separately, capturing values per-iteration
-        for route_config in route_configs:
-            if not isinstance(route_config, dict):
-                logger.error(f"Invalid route config for {modname}: {route_config}")
-                continue
-            endpoint = route_config.get("endpoint")
-            params_class = route_config.get("params_class")
-            use_form = route_config.get("use_form", False)
-            tool_name_default = route_config.get("tool_name", modname)
-
-            if not endpoint or not params_class:
-                logger.error(
-                    f"Route config for {modname} missing 'endpoint' or 'params_class': {route_config}",
-                )
-                continue
-
-            tool_endpoint_func = create_tool_endpoint(
-                params_class,
-                use_form,
-                tool_name_default,
+            # Use the provided tool_name_default captured in closure
+            tool_name = tool_name_default
+            result = await tool_instance.call_tool(
+                tool_name,
+                params_obj.model_dump(),
             )
-            self.app.post(endpoint)(tool_endpoint_func)
-            logger.info(f"Registered route {endpoint} for tool {modname}")
+            # Convert to dict for JSON response
+            return {
+                "content": [
+                    {"type": item.type, "text": item.text}
+                    for item in result
+                    if hasattr(item, "type") and hasattr(item, "text")
+                ],
+            }
+
+        # Set the signature on the function
+        tool_endpoint.__signature__ = sig
+
+        return tool_endpoint
+
+    def _create_json_endpoint(
+        self,
+        p_class,
+        tool_name_default: str,
+        tool_instance: BaseMCPTool,
+        verify_api_key,
+    ):
+        """创建JSON数据端点"""
+
+        async def tool_endpoint(
+            params,  # type: ignore
+            _api_key: str = Depends(verify_api_key),
+        ):
+            # params is already validated by FastAPI as the correct type
+            # Use the provided tool_name_default captured in closure
+            tool_name = tool_name_default
+            result = await tool_instance.call_tool(
+                tool_name,
+                params.model_dump(),
+            )
+            # Convert to dict for JSON response
+            return {
+                "content": [
+                    {"type": item.type, "text": item.text}
+                    for item in result
+                    if hasattr(item, "type") and hasattr(item, "text")
+                ],
+            }
+
+        # Set the type annotation dynamically
+        tool_endpoint.__annotations__["params"] = p_class
+        return tool_endpoint
 
     def authenticate(self, api_key: str) -> bool:
         """Authenticate using API key with enhanced security."""
