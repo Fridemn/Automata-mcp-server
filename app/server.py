@@ -74,13 +74,21 @@ class AutomataMCPServer:
         # Load environment variables from .env file
         load_dotenv()
 
+        # Derive the OpenAPI `servers` entry from environment variables to avoid
+        # hard-coded addresses. Prefer an explicit SERVER_URL if provided,
+        # otherwise build from HOST and PORT with sensible defaults.
+        server_url = (
+            os.getenv("SERVER_URL")
+            or f"http://{os.getenv('HOST', 'localhost')}:{os.getenv('PORT', '8000')}"
+        )
+
         self.app = FastAPI(
             title="Automata MCP Server",
             description="A centralized MCP server using FastAPI with plugin architecture",
             version="1.0.0",
             servers=[
                 {
-                    "url": "http://localhost:8000",
+                    "url": server_url,
                     "description": "Development server",
                 },
             ],
