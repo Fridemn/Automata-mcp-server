@@ -641,6 +641,9 @@ class AutomataMCPServer:
             else:
                 form_func = Form
 
+            # Get the field type annotation
+            field_annotation = field_info.annotation
+
             if field_info.is_required():
                 params.append(
                     inspect.Parameter(
@@ -650,6 +653,7 @@ class AutomataMCPServer:
                             ...,
                             description=field_info.description or "",
                         ),
+                        annotation=field_annotation,
                     ),
                 )
             else:
@@ -661,6 +665,7 @@ class AutomataMCPServer:
                             field_info.default,
                             description=field_info.description or "",
                         ),
+                        annotation=field_annotation,
                     ),
                 )
 
