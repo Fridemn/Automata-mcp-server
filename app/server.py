@@ -393,25 +393,86 @@ class AutomataMCPServer:
             module_path = self._build_module_path(tools_dir, modname)
 
             # 导入模块
-            module = importlib.import_module(module_path)
+            try:
+                module = importlib.import_module(module_path)
+            except Exception as e:
+                error_msg = f"Failed to import tool module {module_path}"
+                raise ToolLoadError(
+                    error_msg,
+                    details={
+                        "tool": modname,
+                        "module_path": module_path,
+                        "import_error": str(e),
+                        "error_type": type(e).__name__,
+                    },
+                )
 
             # 获取工具类
             tool_class_name = self._build_tool_class_name(modname)
 
-            tool_class = self._get_tool_class(
-                module,
-                tool_class_name,
-                module_path,
-                modname,
-            )
-            self._validate_tool_class(tool_class, tool_class_name, modname)
+            try:
+                tool_class = self._get_tool_class(
+                    module,
+                    tool_class_name,
+                    module_path,
+                    modname,
+                )
+            except Exception as e:
+                error_msg = f"Failed to get tool class {tool_class_name}"
+                raise ToolLoadError(
+                    error_msg,
+                    details={
+                        "tool": modname,
+                        "class_name": tool_class_name,
+                        "module_path": module_path,
+                        "get_class_error": str(e),
+                        "error_type": type(e).__name__,
+                    },
+                )
+
+            try:
+                self._validate_tool_class(tool_class, tool_class_name, modname)
+            except Exception as e:
+                error_msg = f"Failed to validate tool class {tool_class_name}"
+                raise ToolLoadError(
+                    error_msg,
+                    details={
+                        "tool": modname,
+                        "class_name": tool_class_name,
+                        "validation_error": str(e),
+                        "error_type": type(e).__name__,
+                    },
+                )
 
             # 实例化工具
-            tool_instance = tool_class()
+            try:
+                tool_instance = tool_class()
+            except Exception as e:
+                error_msg = f"Failed to instantiate tool class {tool_class_name}"
+                raise ToolLoadError(
+                    error_msg,
+                    details={
+                        "tool": modname,
+                        "class_name": tool_class_name,
+                        "instantiation_error": str(e),
+                        "error_type": type(e).__name__,
+                    },
+                )
 
             # 注册工具
             self.tools[modname] = tool_instance
-            self.register_tool_routes(tool_instance, modname)
+            try:
+                self.register_tool_routes(tool_instance, modname)
+            except Exception as e:
+                error_msg = f"Failed to register routes for tool {modname}"
+                raise ToolLoadError(
+                    error_msg,
+                    details={
+                        "tool": modname,
+                        "registration_error": str(e),
+                        "error_type": type(e).__name__,
+                    },
+                )
 
             logger.info(f"Tool {modname} discovered and registered successfully")
 
