@@ -10,6 +10,7 @@ poetry.lock
 
 openapi.json
 data/dist/
+data/*.png
 app/AutoUp-MCP-Extension
 
 ignore/
