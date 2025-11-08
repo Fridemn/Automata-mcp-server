@@ -355,28 +355,16 @@ class AutomataMCPServer:
     def discover_tools(self):
         """Automatically discover tools with improved error handling."""
         for tools_dir in self.tools_dirs:
-            self._discover_tools_in_directory_safe(tools_dir)
-
-    def _discover_tools_in_directory_safe(self, tools_dir: Path):
-        """安全地在目录中发现工具，处理异常"""
-        try:
-            self._validate_tools_directory(tools_dir)
-            self._discover_tools_in_directory(tools_dir)
-        except Exception as e:
-            handle_exception(e, {"tools_dir": str(tools_dir)})
-
-    def _discover_tools_in_directory(self, tools_dir: Path):
-        """在指定目录中发现工具"""
-        for item in tools_dir.iterdir():
-            if not (item.is_dir() and (item / "__init__.py").exists()):
-                continue
-
-            modname = item.name
             try:
-                self._load_and_register_tool(item, modname, tools_dir)
+                self._validate_tools_directory(tools_dir)
+                for item in tools_dir.iterdir():
+                    if not (item.is_dir() and (item / "__init__.py").exists()):
+                        continue
+
+                    modname = item.name
+                    self._load_and_register_tool(item, modname, tools_dir)
             except Exception as e:
-                handle_exception(e, {"tool": modname, "tools_dir": str(tools_dir)})
-                continue
+                handle_exception(e, {"tools_dir": str(tools_dir)})
 
     def _load_and_register_tool(self, tool_dir: Path, modname: str, tools_dir: Path):
         """加载并注册工具"""
@@ -461,6 +449,7 @@ class AutomataMCPServer:
 
             # 注册工具
             self.tools[modname] = tool_instance
+
             try:
                 self.register_tool_routes(tool_instance, modname)
             except Exception as e:
@@ -476,26 +465,6 @@ class AutomataMCPServer:
 
             logger.info(f"Tool {modname} discovered and registered successfully")
 
-        except ImportError as e:
-            error_msg = f"Failed to import tool module {module_path}"
-            raise ToolLoadError(
-                error_msg,
-                details={
-                    "tool": modname,
-                    "module_path": module_path,
-                    "import_error": str(e),
-                },
-            )
-        except AttributeError as e:
-            error_msg = f"Failed to load tool class from module {module_path}"
-            raise ToolLoadError(
-                error_msg,
-                details={
-                    "tool": modname,
-                    "module_path": module_path,
-                    "attribute_error": str(e),
-                },
-            )
         except Exception as e:
             error_msg = f"Unexpected error loading tool {modname}"
             raise ToolLoadError(
