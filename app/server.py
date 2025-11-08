@@ -164,49 +164,34 @@ class AutomataMCPServer:
     @with_exception_handling("dependency_installation")
     def install_dependencies_for_enabled_tools(self):
         """Install dependencies for all tools with improved error handling."""
+        # 遍历每个工具目录
         for tools_dir in self.tools_dirs:
-            self._install_dependencies_for_directory_safe(tools_dir)
-
-    def _install_dependencies_for_directory_safe(self, tools_dir: Path):
-        """安全地为目录安装依赖，处理异常"""
-        try:
-            self._validate_tools_directory(tools_dir)
-            self._install_dependencies_for_directory(tools_dir)
-        except Exception as e:
-            # 继续处理其他目录，但记录错误
-            handle_exception(e, {"tools_dir": str(tools_dir)})
-
-    def _validate_tools_directory(self, tools_dir: Path):
-        """验证工具目录"""
-        if not tools_dir.exists():
-            error_msg = f"Tools directory does not exist: {tools_dir}"
-            raise ConfigurationError(
-                error_msg,
-                details={"tools_dir": str(tools_dir)},
-            )
-
-        if not tools_dir.is_dir():
-            error_msg = f"Path is not a directory: {tools_dir}"
-            raise ConfigurationError(
-                error_msg,
-                details={"tools_dir": str(tools_dir)},
-            )
-
-    def _install_dependencies_for_directory(self, tools_dir: Path):
-        """为指定目录安装依赖"""
-        for item in tools_dir.iterdir():
-            if not (item.is_dir() and (item / "__init__.py").exists()):
-                continue
-
-            modname = item.name
             try:
-                self._install_tool_dependencies(item, modname)
-            except Exception as e:
-                # 继续处理其他工具，但记录错误
-                handle_exception(e, {"tool": modname, "tools_dir": str(tools_dir)})
-                continue
+                # 检查目录是否是有效目录
+                if not tools_dir.is_dir():
+                    error_msg = f"Path not exist or not a directory: {tools_dir}"
+                    raise ConfigurationError(
+                        error_msg,
+                        details={"tools_dir": str(tools_dir)},
+                    )
 
-    def _install_tool_dependencies(self, tool_dir: Path, modname: str):
+                # 遍历工具目录下的每个子目录
+                for item in tools_dir.iterdir():
+                    if not (item.is_dir() and (item / "__init__.py").exists()):
+                        continue
+
+                    modname = item.name
+                    try:
+                        self._install_single_tool_dependencies(item, modname)
+                    except Exception as e:
+                        # 继续处理其他工具，但记录错误
+                        handle_exception(e, {"tool": modname, "tools_dir": str(tools_dir)})
+                        continue
+            except Exception as e:
+                # 继续处理其他目录，但记录错误
+                handle_exception(e, {"tools_dir": str(tools_dir)})
+
+    def _install_single_tool_dependencies(self, tool_dir: Path, modname: str):
         """安装单个工具的依赖"""
         config_path = tool_dir / "config.yaml"
         config = self._load_tool_config(config_path, modname)
@@ -215,11 +200,11 @@ class AutomataMCPServer:
         if not packages:
             return
 
-        logger.info(f"Installing packages for tool {modname}: {packages}")
+        logger.debug(f"Installing packages for tool {modname}: {packages}")
 
         try:
             self._run_pip_install(packages, tool_dir.parent.parent)
-            logger.info(f"Successfully installed packages for {modname}")
+            logger.debug(f"Successfully installed packages for {modname}")
         except subprocess.CalledProcessError as e:
             error_msg = f"Failed to install packages for {modname}"
             raise DependencyInstallError(
@@ -300,7 +285,8 @@ class AutomataMCPServer:
         """Automatically discover tools with improved error handling."""
         for tools_dir in self.tools_dirs:
             try:
-                self._validate_tools_directory(tools_dir)
+                if not tools_dir.is_dir():
+                    continue
                 for item in tools_dir.iterdir():
                     if not (item.is_dir() and (item / "__init__.py").exists()):
                         continue
