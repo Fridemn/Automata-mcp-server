@@ -8,17 +8,7 @@ from pathlib import Path
 import uvicorn
 import yaml
 from dotenv import load_dotenv
-from fastapi import (
-    Depends,
-    FastAPI,
-    File,
-    Form,
-    Header,
-    HTTPException,
-    Request,
-    Response,
-    UploadFile,
-)
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
@@ -34,7 +24,12 @@ from .exceptions import (
     handle_exception,
     with_exception_handling,
 )
-from .routers import create_router
+from .routers import (
+    create_router,
+    create_tool_endpoint,
+    get_route_configs,
+    verify_api_key_dependency,
+)
 
 
 class MCPRequest(BaseModel):
@@ -402,6 +397,39 @@ class AutomataMCPServer:
                 details={"tool": modname, "error": str(e)},
             )
 
+    def register_tool_routes(self, tool_instance: BaseMCPTool, modname: str):
+        """Register FastAPI routes for the tool."""
+        route_configs = get_route_configs(tool_instance, modname)
+        for config in route_configs:
+            self._register_single_route(tool_instance, modname, config)
+
+    def _register_single_route(
+        self,
+        tool_instance: BaseMCPTool,
+        modname: str,
+        config: dict,
+    ):
+        """Register a single tool route."""
+        endpoint = config["endpoint"]
+        params_class = config["params_class"]
+        use_form = config["use_form"]
+        tool_name = config["tool_name"]
+
+        # Create endpoint function
+        verify_api_key = verify_api_key_dependency(self.authenticate)
+        tool_endpoint_func = create_tool_endpoint(
+            params_class,
+            use_form,
+            tool_name,
+            tool_instance,
+            verify_api_key,
+        )
+
+        # Register route
+        response_model = tool_instance.get_response_model()
+        self.app.post(endpoint, response_model=response_model)(tool_endpoint_func)
+        logger.info(f"Registered route {endpoint} for tool {modname}")
+
     def _build_module_path(self, tools_dir: Path, modname: str) -> str:
         """构建模块路径"""
         app_dir = Path(__file__).parent
@@ -475,49 +503,9 @@ class AutomataMCPServer:
 
     def register_tool_routes(self, tool_instance: BaseMCPTool, modname: str):
         """Register FastAPI routes for the tool."""
-        route_configs = self._get_route_configs(tool_instance, modname)
+        route_configs = get_route_configs(tool_instance, modname)
         for config in route_configs:
             self._register_single_route(tool_instance, modname, config)
-
-    def _get_route_configs(
-        self,
-        tool_instance: BaseMCPTool,
-        modname: str,
-    ) -> list[dict]:
-        """获取和验证路由配置"""
-        route_configs = tool_instance.get_route_config()
-        if isinstance(route_configs, dict):
-            route_configs = [route_configs]
-        if not isinstance(route_configs, list | tuple):
-            logger.error(
-                f"Tool {modname} get_route_config must return a dict or list of dicts, got {type(route_configs)}",
-            )
-            return []
-
-        # 验证和标准化配置
-        validated_configs = []
-        for route_config in route_configs:
-            if not isinstance(route_config, dict):
-                logger.error(f"Invalid route config for {modname}: {route_config}")
-                continue
-
-            # 确保必要的字段存在
-            if not route_config.get("endpoint") or not route_config.get("params_class"):
-                logger.error(
-                    f"Route config for {modname} missing 'endpoint' or 'params_class': {route_config}",
-                )
-                continue
-
-            # 设置默认值
-            normalized_config = {
-                "endpoint": route_config["endpoint"],
-                "params_class": route_config["params_class"],
-                "use_form": route_config.get("use_form", False),
-                "tool_name": route_config.get("tool_name", modname),
-            }
-            validated_configs.append(normalized_config)
-
-        return validated_configs
 
     def _register_single_route(
         self,
@@ -525,190 +513,26 @@ class AutomataMCPServer:
         modname: str,
         config: dict,
     ):
-        """注册单个路由"""
+        """Register a single tool route."""
         endpoint = config["endpoint"]
         params_class = config["params_class"]
         use_form = config["use_form"]
         tool_name = config["tool_name"]
 
-        # 创建端点函数
-        tool_endpoint_func = self._create_tool_endpoint(
+        # Create endpoint function
+        verify_api_key = verify_api_key_dependency(self.authenticate)
+        tool_endpoint_func = create_tool_endpoint(
             params_class,
             use_form,
             tool_name,
             tool_instance,
-        )
-
-        # 注册路由
-        response_model = tool_instance.get_response_model()
-        self.app.post(endpoint, response_model=response_model)(tool_endpoint_func)
-        logger.info(f"Registered route {endpoint} for tool {modname}")
-
-    def _create_tool_endpoint(
-        self,
-        p_class,
-        use_form_flag: bool,
-        tool_name_default: str,
-        tool_instance: BaseMCPTool,
-    ):
-        """创建工具端点函数"""
-
-        async def verify_api_key(
-            x_api_key: str | None = Header(None, alias="X-API-Key"),
-        ):
-            """Dependency to verify API key."""
-            if not self.authenticate(x_api_key or ""):
-                raise HTTPException(status_code=401, detail="Invalid API key")
-            return x_api_key
-
-        if use_form_flag:
-            # For form data, create a dynamic function with proper Form parameters
-            return self._create_form_endpoint(
-                p_class,
-                tool_name_default,
-                tool_instance,
-                verify_api_key,
-            )
-        # For JSON data, create a simpler function
-        return self._create_json_endpoint(
-            p_class,
-            tool_name_default,
-            tool_instance,
             verify_api_key,
         )
 
-    def _create_form_endpoint(
-        self,
-        p_class,
-        tool_name_default: str,
-        tool_instance: BaseMCPTool,
-        verify_api_key,
-    ):
-        """创建表单数据端点"""
-        # Get the fields from the params class
-        fields = p_class.model_fields
-
-        # Create parameter list for function signature
-        params = []
-
-        for field_name, field_info in fields.items():
-            # Check if the field is UploadFile
-            if field_info.annotation == UploadFile or (
-                hasattr(field_info.annotation, "__origin__")
-                and field_info.annotation.__origin__ == UploadFile
-            ):
-                form_func = File
-            else:
-                form_func = Form
-
-            # Get the field type annotation
-            field_annotation = field_info.annotation
-
-            if field_info.is_required():
-                params.append(
-                    inspect.Parameter(
-                        field_name,
-                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                        default=form_func(
-                            ...,
-                            description=field_info.description or "",
-                        ),
-                        annotation=field_annotation,
-                    ),
-                )
-            else:
-                params.append(
-                    inspect.Parameter(
-                        field_name,
-                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                        default=form_func(
-                            field_info.default,
-                            description=field_info.description or "",
-                        ),
-                        annotation=field_annotation,
-                    ),
-                )
-
-        # Add API key parameter
-        params.append(
-            inspect.Parameter(
-                "_api_key",
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                default=Depends(verify_api_key),
-            ),
-        )
-
-        # Create the function signature
-        sig = inspect.Signature(params)
-
-        async def tool_endpoint(**kwargs):
-            # The function will receive form parameters directly
-            # Separate API key from form data
-            kwargs.pop("_api_key", None)
-            form_data = kwargs
-
-            # Validate form data with the params_class
-            try:
-                params_obj = p_class(**form_data)
-            except ValueError as e:
-                raise HTTPException(status_code=422, detail=str(e))
-
-            # Use the provided tool_name_default captured in closure
-            tool_name = tool_name_default
-            try:
-                result = await tool_instance.call_tool(
-                    tool_name,
-                    params_obj.model_dump(),
-                )
-                # Convert to BaseResponse format
-                content = [
-                    {"type": item.type, "text": item.text}
-                    for item in result
-                    if hasattr(item, "type") and hasattr(item, "text")
-                ]
-                return {"success": True, "data": {"content": content}, "error": None}
-            except Exception as e:
-                return {"success": False, "data": None, "error": str(e)}
-
-        # Set the signature on the function
-        tool_endpoint.__signature__ = sig
-
-        return tool_endpoint
-
-    def _create_json_endpoint(
-        self,
-        p_class,
-        tool_name_default: str,
-        tool_instance: BaseMCPTool,
-        verify_api_key,
-    ):
-        """创建JSON数据端点"""
-
-        async def tool_endpoint(
-            params,  # type: ignore
-            _api_key: str = Depends(verify_api_key),
-        ):
-            # params is already validated by FastAPI as the correct type
-            # Use the provided tool_name_default captured in closure
-            tool_name = tool_name_default
-            try:
-                result = await tool_instance.call_tool(
-                    tool_name,
-                    params.model_dump(),
-                )
-                # Convert to BaseResponse format
-                content = [
-                    {"type": item.type, "text": item.text}
-                    for item in result
-                    if hasattr(item, "type") and hasattr(item, "text")
-                ]
-                return {"success": True, "data": {"content": content}, "error": None}
-            except Exception as e:
-                return {"success": False, "data": None, "error": str(e)}
-
-        # Set the type annotation dynamically
-        tool_endpoint.__annotations__["params"] = p_class
-        return tool_endpoint
+        # Register route
+        response_model = tool_instance.get_response_model()
+        self.app.post(endpoint, response_model=response_model)(tool_endpoint_func)
+        logger.info(f"Registered route {endpoint} for tool {modname}")
 
     def authenticate(self, api_key: str) -> bool:
         """Authenticate using API key with enhanced security."""
