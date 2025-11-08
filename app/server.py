@@ -21,7 +21,6 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer
 from fastapi_mcp import FastApiMCP
 from loguru import logger
 from pydantic import BaseModel
@@ -75,6 +74,12 @@ class AutomataMCPServer:
             servers=servers,
         )
 
+        self.api_key = os.getenv("AUTOMATA_API_KEY", "")
+        self.host = os.getenv("HOST")
+        self.port = os.getenv("PORT")
+
+        self._validate_security_config()
+
         # Add CORS middleware
         allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost")
         allowed_origins_list = list(filter(lambda x: x, map(str.strip, allowed_origins.split(","))))
@@ -113,9 +118,6 @@ class AutomataMCPServer:
             return response
 
         self.tools = {}
-        self.api_key = os.getenv("AUTOMATA_API_KEY")  # 从环境变量获取API key
-        self.host = os.getenv("HOST")
-        self.port = os.getenv("PORT")
         # 配置工具目录路径，支持绝对路径和相对路径
         tools_dir_env = os.getenv("TOOLS_DIR")
         if tools_dir_env is None:
@@ -139,9 +141,6 @@ class AutomataMCPServer:
             create_router(self.authenticate, lambda: len(self.tools), self.tools),
         )
 
-        # 验证安全配置
-        self._validate_security_config()
-
     def _validate_security_config(self):
         """验证安全配置"""
         # 检查API key配置
@@ -151,11 +150,7 @@ class AutomataMCPServer:
             )
 
         # 检查CORS配置
-        allowed_origins = os.getenv(
-            "ALLOWED_ORIGINS",
-            "http://localhost:3000,http://localhost:5173",
-        )
-        if "*" in allowed_origins:
+        if "*" in os.getenv("ALLOWED_ORIGINS", "*"):
             logger.warning(
                 "SECURITY: CORS allows all origins. Consider restricting ALLOWED_ORIGINS.",
             )
