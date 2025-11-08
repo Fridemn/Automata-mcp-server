@@ -75,27 +75,20 @@ class AutomataMCPServer:
             servers=servers,
         )
 
-        # Add CORS middleware with secure defaults
-        # Allow localhost, 127.0.0.1, and 0.0.0.0 for local development
-        allowed_origins = os.getenv(
-            "ALLOWED_ORIGINS",
-            "http://localhost:3000,http://localhost:5173,http://localhost:8000,http://127.0.0.1:8000,http://0.0.0.0:8000",
-        )
-        allowed_origins_list = [
-            origin.strip() for origin in allowed_origins.split(",") if origin.strip()
-        ]
+        # Add CORS middleware
+        allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost")
+        allowed_origins_list = list(filter(lambda x: x, map(str.strip, allowed_origins.split(","))))
+        allowed_methods = os.getenv("ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS")
+        allowed_methods_list = list(filter(lambda x: x, map(str.strip, allowed_methods.split(","))))
+        allowed_headers = os.getenv("ALLOWED_HEADERS", "X-API-Key,Content-Type,Authorization")
+        allowed_headers_list = list(filter(lambda x: x, map(str.strip, allowed_headers.split(","))))
 
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=allowed_origins_list,  # Only allow specified origins
+            allow_origins=allowed_origins_list,
             allow_credentials=True,
-            allow_methods=["GET", "POST", "OPTIONS"],  # Only allow necessary methods
-            allow_headers=[
-                "X-API-Key",
-                "Content-Type",
-                "Authorization",
-                "accept",
-            ],  # Only allow necessary headers
+            allow_methods=allowed_methods_list,
+            allow_headers=allowed_headers_list,
         )
 
         # Add security headers middleware
