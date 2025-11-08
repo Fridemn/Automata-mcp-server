@@ -2,7 +2,6 @@ import importlib
 import inspect
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 # Core server module for Automata MCP Server
@@ -54,25 +53,6 @@ class MCPResponse(BaseModel):
 
 class AutomataMCPServer:
     def __init__(self):
-        # Configure loguru logging
-        logs_dir = Path("logs")
-        logs_dir.mkdir(exist_ok=True)
-        logger.remove()  # Remove default handler
-        logger.add(
-            logs_dir / "automata.log",
-            rotation="10 MB",
-            retention="1 week",
-            level="INFO",
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} | {message}",
-        )
-        logger.add(
-            sys.stderr,
-            level="INFO",
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
-        )
-
-        # Load environment variables from .env file
-        load_dotenv()
 
         # Derive the OpenAPI `servers` entry from environment variables to avoid
         # hard-coded addresses. Prefer an explicit SERVER_URL if provided,
