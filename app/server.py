@@ -53,44 +53,20 @@ class MCPResponse(BaseModel):
 
 class AutomataMCPServer:
     def __init__(self):
-
         # Derive the OpenAPI `servers` entry from environment variables to avoid
         # hard-coded addresses. Prefer an explicit SERVER_URL if provided,
         # otherwise build from HOST and PORT with sensible defaults.
-        server_url = (
-            os.getenv("SERVER_URL")
-            or f"http://{os.getenv('HOST', 'localhost')}:{os.getenv('PORT', '8000')}"
-        )
-
-        # Build servers list from environment configuration
-        servers = []
-
-        # Add localhost server (always available for local development)
-        if os.getenv("INCLUDE_LOCALHOST_SERVER", "true").lower() == "true":
-            servers.append(
-                {
-                    "url": f"http://localhost:{os.getenv('PORT', '8000')}",
-                    "description": "Local development server",
-                },
-            )
-
-        # Add 127.0.0.1 server (IP-based local access)
-        if os.getenv("INCLUDE_127_SERVER", "true").lower() == "true":
-            servers.append(
-                {
-                    "url": f"http://127.0.0.1:{os.getenv('PORT', '8000')}",
-                    "description": "Local development server (IP)",
-                },
-            )
-
-        # Add configured server URL
-        if server_url:
-            servers.append(
-                {
-                    "url": server_url,
-                    "description": "Development server",
-                },
-            )
+        servers = [
+            {
+                "url": (
+                    os.getenv(
+                        "SERVER_URL",
+                        f"http://{os.getenv('HOST', 'localhost')}:{os.getenv('PORT', '8000')}",
+                    )
+                ),
+                "description": "Development server",
+            },
+        ]
 
         self.app = FastAPI(
             title="Automata MCP Server",
