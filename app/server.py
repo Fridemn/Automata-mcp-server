@@ -1,10 +1,12 @@
+# Core server module for Automata MCP Server
+import hmac
 import importlib
 import inspect
 import os
 import subprocess
+import sys
 from pathlib import Path
 
-# Core server module for Automata MCP Server
 import uvicorn
 import yaml
 from dotenv import load_dotenv
@@ -47,6 +49,9 @@ class MCPResponse(BaseModel):
 
 class AutomataMCPServer:
     def __init__(self):
+        # Load environment variables from .env file
+        load_dotenv()
+
         # Derive the OpenAPI `servers` entry from environment variables to avoid
         # hard-coded addresses. Prefer an explicit SERVER_URL if provided,
         # otherwise build from HOST and PORT with sensible defaults.
@@ -77,16 +82,34 @@ class AutomataMCPServer:
 
         # Add CORS middleware
         allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost")
-        allowed_origins_list = list(filter(lambda x: x, map(str.strip, allowed_origins.split(","))))
+        allowed_origins_list = list(
+            filter(lambda x: x, map(str.strip, allowed_origins.split(","))),
+        )
         allowed_methods = os.getenv("ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS")
-        allowed_methods_list = list(filter(lambda x: x, map(str.strip, allowed_methods.split(","))))
-        allowed_headers = os.getenv("ALLOWED_HEADERS", "X-API-Key,Content-Type,Authorization")
-        allowed_headers_list = list(filter(lambda x: x, map(str.strip, allowed_headers.split(","))))
+        allowed_methods_list = list(
+            filter(lambda x: x, map(str.strip, allowed_methods.split(","))),
+        )
+        allowed_headers = os.getenv(
+            "ALLOWED_HEADERS",
+            "X-API-Key,Content-Type,Authorization",
+        )
+        allowed_headers_list = list(
+            filter(lambda x: x, map(str.strip, allowed_headers.split(","))),
+        )
+
+        # Handle CORS configuration
+        if allowed_origins_list == ["*"]:
+            # When allowing all origins, cannot use credentials
+            cors_origins = ["*"]
+            cors_credentials = False
+        else:
+            cors_origins = allowed_origins_list
+            cors_credentials = True
 
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=allowed_origins_list,
-            allow_credentials=True,
+            allow_origins=cors_origins,
+            allow_credentials=cors_credentials,
             allow_methods=allowed_methods_list,
             allow_headers=allowed_headers_list,
         )
@@ -161,15 +184,15 @@ class AutomataMCPServer:
         """Install dependencies for all tools with improved error handling."""
         # 遍历每个工具目录
         for tools_dir in self.tools_dirs:
-            try:
-                # 检查目录是否是有效目录
-                if not tools_dir.is_dir():
-                    error_msg = f"Path not exist or not a directory: {tools_dir}"
-                    raise ConfigurationError(
-                        error_msg,
-                        details={"tools_dir": str(tools_dir)},
-                    )
+            # 检查目录是否是有效目录
+            if not tools_dir.is_dir():
+                error_msg = f"Path not exist or not a directory: {tools_dir}"
+                raise ConfigurationError(
+                    error_msg,
+                    details={"tools_dir": str(tools_dir)},
+                )
 
+            try:
                 # 遍历工具目录下的每个子目录
                 for item in tools_dir.iterdir():
                     if not (item.is_dir() and (item / "__init__.py").exists()):
@@ -180,7 +203,10 @@ class AutomataMCPServer:
                         self._install_single_tool_dependencies(item, modname)
                     except Exception as e:
                         # 继续处理其他工具，但记录错误
-                        handle_exception(e, {"tool": modname, "tools_dir": str(tools_dir)})
+                        handle_exception(
+                            e,
+                            {"tool": modname, "tools_dir": str(tools_dir)},
+                        )
                         continue
             except Exception as e:
                 # 继续处理其他目录，但记录错误
@@ -479,7 +505,6 @@ class AutomataMCPServer:
 
         if not issubclass(tool_class, BaseMCPTool):
             # 获取所有可用的Tool类用于错误信息
-            import sys
 
             current_module = sys.modules.get(tool_class.__module__)
             available_tool_classes = []
@@ -501,39 +526,6 @@ class AutomataMCPServer:
                 },
             )
 
-    def register_tool_routes(self, tool_instance: BaseMCPTool, modname: str):
-        """Register FastAPI routes for the tool."""
-        route_configs = get_route_configs(tool_instance, modname)
-        for config in route_configs:
-            self._register_single_route(tool_instance, modname, config)
-
-    def _register_single_route(
-        self,
-        tool_instance: BaseMCPTool,
-        modname: str,
-        config: dict,
-    ):
-        """Register a single tool route."""
-        endpoint = config["endpoint"]
-        params_class = config["params_class"]
-        use_form = config["use_form"]
-        tool_name = config["tool_name"]
-
-        # Create endpoint function
-        verify_api_key = verify_api_key_dependency(self.authenticate)
-        tool_endpoint_func = create_tool_endpoint(
-            params_class,
-            use_form,
-            tool_name,
-            tool_instance,
-            verify_api_key,
-        )
-
-        # Register route
-        response_model = tool_instance.get_response_model()
-        self.app.post(endpoint, response_model=response_model)(tool_endpoint_func)
-        logger.info(f"Registered route {endpoint} for tool {modname}")
-
     def authenticate(self, api_key: str) -> bool:
         """Authenticate using API key with enhanced security."""
         # If no API key is configured, allow access (development mode)
@@ -552,7 +544,6 @@ class AutomataMCPServer:
             return False
 
         # Use constant-time comparison to prevent timing attacks
-        import hmac
 
         return hmac.compare_digest(api_key.strip(), self.api_key.strip())
 
