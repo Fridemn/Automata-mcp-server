@@ -2,27 +2,15 @@ import importlib
 import inspect
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 # Core server module for Automata MCP Server
 import uvicorn
 import yaml
 from dotenv import load_dotenv
-from fastapi import (
-    Depends,
-    FastAPI,
-    File,
-    Form,
-    Header,
-    HTTPException,
-    Request,
-    Response,
-    UploadFile,
-)
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer
 from fastapi_mcp import FastApiMCP
 from loguru import logger
 from pydantic import BaseModel
@@ -36,7 +24,12 @@ from .exceptions import (
     handle_exception,
     with_exception_handling,
 )
-from .routers import create_router
+from .routers import (
+    create_router,
+    create_tool_endpoint,
+    get_route_configs,
+    verify_api_key_dependency,
+)
 
 
 class MCPRequest(BaseModel):
@@ -54,63 +47,20 @@ class MCPResponse(BaseModel):
 
 class AutomataMCPServer:
     def __init__(self):
-        # Configure loguru logging
-        logs_dir = Path("logs")
-        logs_dir.mkdir(exist_ok=True)
-        logger.remove()  # Remove default handler
-        logger.add(
-            logs_dir / "automata.log",
-            rotation="10 MB",
-            retention="1 week",
-            level="INFO",
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} | {message}",
-        )
-        logger.add(
-            sys.stderr,
-            level="INFO",
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
-        )
-
-        # Load environment variables from .env file
-        load_dotenv()
-
         # Derive the OpenAPI `servers` entry from environment variables to avoid
         # hard-coded addresses. Prefer an explicit SERVER_URL if provided,
         # otherwise build from HOST and PORT with sensible defaults.
-        server_url = (
-            os.getenv("SERVER_URL")
-            or f"http://{os.getenv('HOST', 'localhost')}:{os.getenv('PORT', '8000')}"
-        )
-
-        # Build servers list from environment configuration
-        servers = []
-
-        # Add localhost server (always available for local development)
-        if os.getenv("INCLUDE_LOCALHOST_SERVER", "true").lower() == "true":
-            servers.append(
-                {
-                    "url": f"http://localhost:{os.getenv('PORT', '8000')}",
-                    "description": "Local development server",
-                },
-            )
-
-        # Add 127.0.0.1 server (IP-based local access)
-        if os.getenv("INCLUDE_127_SERVER", "true").lower() == "true":
-            servers.append(
-                {
-                    "url": f"http://127.0.0.1:{os.getenv('PORT', '8000')}",
-                    "description": "Local development server (IP)",
-                },
-            )
-
-        # Add configured server URL
-        if server_url:
-            servers.append(
-                {
-                    "url": server_url,
-                    "description": "Development server",
-                },
-            )
+        servers = [
+            {
+                "url": (
+                    os.getenv(
+                        "SERVER_URL",
+                        f"http://{os.getenv('HOST', 'localhost')}:{os.getenv('PORT', '8000')}",
+                    )
+                ),
+                "description": "Development server",
+            },
+        ]
 
         self.app = FastAPI(
             title="Automata MCP Server",
@@ -119,27 +69,26 @@ class AutomataMCPServer:
             servers=servers,
         )
 
-        # Add CORS middleware with secure defaults
-        # Allow localhost, 127.0.0.1, and 0.0.0.0 for local development
-        allowed_origins = os.getenv(
-            "ALLOWED_ORIGINS",
-            "http://localhost:3000,http://localhost:5173,http://localhost:8000,http://127.0.0.1:8000,http://0.0.0.0:8000",
-        )
-        allowed_origins_list = [
-            origin.strip() for origin in allowed_origins.split(",") if origin.strip()
-        ]
+        self.api_key = os.getenv("AUTOMATA_API_KEY", "")
+        self.host = os.getenv("HOST")
+        self.port = os.getenv("PORT")
+
+        self._validate_security_config()
+
+        # Add CORS middleware
+        allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost")
+        allowed_origins_list = list(filter(lambda x: x, map(str.strip, allowed_origins.split(","))))
+        allowed_methods = os.getenv("ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS")
+        allowed_methods_list = list(filter(lambda x: x, map(str.strip, allowed_methods.split(","))))
+        allowed_headers = os.getenv("ALLOWED_HEADERS", "X-API-Key,Content-Type,Authorization")
+        allowed_headers_list = list(filter(lambda x: x, map(str.strip, allowed_headers.split(","))))
 
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=allowed_origins_list,  # Only allow specified origins
+            allow_origins=allowed_origins_list,
             allow_credentials=True,
-            allow_methods=["GET", "POST", "OPTIONS"],  # Only allow necessary methods
-            allow_headers=[
-                "X-API-Key",
-                "Content-Type",
-                "Authorization",
-                "accept",
-            ],  # Only allow necessary headers
+            allow_methods=allowed_methods_list,
+            allow_headers=allowed_headers_list,
         )
 
         # Add security headers middleware
@@ -164,9 +113,6 @@ class AutomataMCPServer:
             return response
 
         self.tools = {}
-        self.api_key = os.getenv("AUTOMATA_API_KEY")  # 从环境变量获取API key
-        self.host = os.getenv("HOST")
-        self.port = os.getenv("PORT")
         # 配置工具目录路径，支持绝对路径和相对路径
         tools_dir_env = os.getenv("TOOLS_DIR")
         if tools_dir_env is None:
@@ -190,9 +136,6 @@ class AutomataMCPServer:
             create_router(self.authenticate, lambda: len(self.tools), self.tools),
         )
 
-        # 验证安全配置
-        self._validate_security_config()
-
     def _validate_security_config(self):
         """验证安全配置"""
         # 检查API key配置
@@ -202,11 +145,7 @@ class AutomataMCPServer:
             )
 
         # 检查CORS配置
-        allowed_origins = os.getenv(
-            "ALLOWED_ORIGINS",
-            "http://localhost:3000,http://localhost:5173",
-        )
-        if "*" in allowed_origins:
+        if "*" in os.getenv("ALLOWED_ORIGINS", "*"):
             logger.warning(
                 "SECURITY: CORS allows all origins. Consider restricting ALLOWED_ORIGINS.",
             )
@@ -220,49 +159,34 @@ class AutomataMCPServer:
     @with_exception_handling("dependency_installation")
     def install_dependencies_for_enabled_tools(self):
         """Install dependencies for all tools with improved error handling."""
+        # 遍历每个工具目录
         for tools_dir in self.tools_dirs:
-            self._install_dependencies_for_directory_safe(tools_dir)
-
-    def _install_dependencies_for_directory_safe(self, tools_dir: Path):
-        """安全地为目录安装依赖，处理异常"""
-        try:
-            self._validate_tools_directory(tools_dir)
-            self._install_dependencies_for_directory(tools_dir)
-        except Exception as e:
-            # 继续处理其他目录，但记录错误
-            handle_exception(e, {"tools_dir": str(tools_dir)})
-
-    def _validate_tools_directory(self, tools_dir: Path):
-        """验证工具目录"""
-        if not tools_dir.exists():
-            error_msg = f"Tools directory does not exist: {tools_dir}"
-            raise ConfigurationError(
-                error_msg,
-                details={"tools_dir": str(tools_dir)},
-            )
-
-        if not tools_dir.is_dir():
-            error_msg = f"Path is not a directory: {tools_dir}"
-            raise ConfigurationError(
-                error_msg,
-                details={"tools_dir": str(tools_dir)},
-            )
-
-    def _install_dependencies_for_directory(self, tools_dir: Path):
-        """为指定目录安装依赖"""
-        for item in tools_dir.iterdir():
-            if not (item.is_dir() and (item / "__init__.py").exists()):
-                continue
-
-            modname = item.name
             try:
-                self._install_tool_dependencies(item, modname)
-            except Exception as e:
-                # 继续处理其他工具，但记录错误
-                handle_exception(e, {"tool": modname, "tools_dir": str(tools_dir)})
-                continue
+                # 检查目录是否是有效目录
+                if not tools_dir.is_dir():
+                    error_msg = f"Path not exist or not a directory: {tools_dir}"
+                    raise ConfigurationError(
+                        error_msg,
+                        details={"tools_dir": str(tools_dir)},
+                    )
 
-    def _install_tool_dependencies(self, tool_dir: Path, modname: str):
+                # 遍历工具目录下的每个子目录
+                for item in tools_dir.iterdir():
+                    if not (item.is_dir() and (item / "__init__.py").exists()):
+                        continue
+
+                    modname = item.name
+                    try:
+                        self._install_single_tool_dependencies(item, modname)
+                    except Exception as e:
+                        # 继续处理其他工具，但记录错误
+                        handle_exception(e, {"tool": modname, "tools_dir": str(tools_dir)})
+                        continue
+            except Exception as e:
+                # 继续处理其他目录，但记录错误
+                handle_exception(e, {"tools_dir": str(tools_dir)})
+
+    def _install_single_tool_dependencies(self, tool_dir: Path, modname: str):
         """安装单个工具的依赖"""
         config_path = tool_dir / "config.yaml"
         config = self._load_tool_config(config_path, modname)
@@ -271,11 +195,11 @@ class AutomataMCPServer:
         if not packages:
             return
 
-        logger.info(f"Installing packages for tool {modname}: {packages}")
+        logger.debug(f"Installing packages for tool {modname}: {packages}")
 
         try:
             self._run_pip_install(packages, tool_dir.parent.parent)
-            logger.info(f"Successfully installed packages for {modname}")
+            logger.debug(f"Successfully installed packages for {modname}")
         except subprocess.CalledProcessError as e:
             error_msg = f"Failed to install packages for {modname}"
             raise DependencyInstallError(
@@ -355,28 +279,17 @@ class AutomataMCPServer:
     def discover_tools(self):
         """Automatically discover tools with improved error handling."""
         for tools_dir in self.tools_dirs:
-            self._discover_tools_in_directory_safe(tools_dir)
-
-    def _discover_tools_in_directory_safe(self, tools_dir: Path):
-        """安全地在目录中发现工具，处理异常"""
-        try:
-            self._validate_tools_directory(tools_dir)
-            self._discover_tools_in_directory(tools_dir)
-        except Exception as e:
-            handle_exception(e, {"tools_dir": str(tools_dir)})
-
-    def _discover_tools_in_directory(self, tools_dir: Path):
-        """在指定目录中发现工具"""
-        for item in tools_dir.iterdir():
-            if not (item.is_dir() and (item / "__init__.py").exists()):
-                continue
-
-            modname = item.name
             try:
-                self._load_and_register_tool(item, modname, tools_dir)
+                if not tools_dir.is_dir():
+                    continue
+                for item in tools_dir.iterdir():
+                    if not (item.is_dir() and (item / "__init__.py").exists()):
+                        continue
+
+                    modname = item.name
+                    self._load_and_register_tool(item, modname, tools_dir)
             except Exception as e:
-                handle_exception(e, {"tool": modname, "tools_dir": str(tools_dir)})
-                continue
+                handle_exception(e, {"tools_dir": str(tools_dir)})
 
     def _load_and_register_tool(self, tool_dir: Path, modname: str, tools_dir: Path):
         """加载并注册工具"""
@@ -461,6 +374,7 @@ class AutomataMCPServer:
 
             # 注册工具
             self.tools[modname] = tool_instance
+
             try:
                 self.register_tool_routes(tool_instance, modname)
             except Exception as e:
@@ -476,32 +390,45 @@ class AutomataMCPServer:
 
             logger.info(f"Tool {modname} discovered and registered successfully")
 
-        except ImportError as e:
-            error_msg = f"Failed to import tool module {module_path}"
-            raise ToolLoadError(
-                error_msg,
-                details={
-                    "tool": modname,
-                    "module_path": module_path,
-                    "import_error": str(e),
-                },
-            )
-        except AttributeError as e:
-            error_msg = f"Failed to load tool class from module {module_path}"
-            raise ToolLoadError(
-                error_msg,
-                details={
-                    "tool": modname,
-                    "module_path": module_path,
-                    "attribute_error": str(e),
-                },
-            )
         except Exception as e:
             error_msg = f"Unexpected error loading tool {modname}"
             raise ToolLoadError(
                 error_msg,
                 details={"tool": modname, "error": str(e)},
             )
+
+    def register_tool_routes(self, tool_instance: BaseMCPTool, modname: str):
+        """Register FastAPI routes for the tool."""
+        route_configs = get_route_configs(tool_instance, modname)
+        for config in route_configs:
+            self._register_single_route(tool_instance, modname, config)
+
+    def _register_single_route(
+        self,
+        tool_instance: BaseMCPTool,
+        modname: str,
+        config: dict,
+    ):
+        """Register a single tool route."""
+        endpoint = config["endpoint"]
+        params_class = config["params_class"]
+        use_form = config["use_form"]
+        tool_name = config["tool_name"]
+
+        # Create endpoint function
+        verify_api_key = verify_api_key_dependency(self.authenticate)
+        tool_endpoint_func = create_tool_endpoint(
+            params_class,
+            use_form,
+            tool_name,
+            tool_instance,
+            verify_api_key,
+        )
+
+        # Register route
+        response_model = tool_instance.get_response_model()
+        self.app.post(endpoint, response_model=response_model)(tool_endpoint_func)
+        logger.info(f"Registered route {endpoint} for tool {modname}")
 
     def _build_module_path(self, tools_dir: Path, modname: str) -> str:
         """构建模块路径"""
@@ -576,49 +503,9 @@ class AutomataMCPServer:
 
     def register_tool_routes(self, tool_instance: BaseMCPTool, modname: str):
         """Register FastAPI routes for the tool."""
-        route_configs = self._get_route_configs(tool_instance, modname)
+        route_configs = get_route_configs(tool_instance, modname)
         for config in route_configs:
             self._register_single_route(tool_instance, modname, config)
-
-    def _get_route_configs(
-        self,
-        tool_instance: BaseMCPTool,
-        modname: str,
-    ) -> list[dict]:
-        """获取和验证路由配置"""
-        route_configs = tool_instance.get_route_config()
-        if isinstance(route_configs, dict):
-            route_configs = [route_configs]
-        if not isinstance(route_configs, list | tuple):
-            logger.error(
-                f"Tool {modname} get_route_config must return a dict or list of dicts, got {type(route_configs)}",
-            )
-            return []
-
-        # 验证和标准化配置
-        validated_configs = []
-        for route_config in route_configs:
-            if not isinstance(route_config, dict):
-                logger.error(f"Invalid route config for {modname}: {route_config}")
-                continue
-
-            # 确保必要的字段存在
-            if not route_config.get("endpoint") or not route_config.get("params_class"):
-                logger.error(
-                    f"Route config for {modname} missing 'endpoint' or 'params_class': {route_config}",
-                )
-                continue
-
-            # 设置默认值
-            normalized_config = {
-                "endpoint": route_config["endpoint"],
-                "params_class": route_config["params_class"],
-                "use_form": route_config.get("use_form", False),
-                "tool_name": route_config.get("tool_name", modname),
-            }
-            validated_configs.append(normalized_config)
-
-        return validated_configs
 
     def _register_single_route(
         self,
@@ -626,190 +513,26 @@ class AutomataMCPServer:
         modname: str,
         config: dict,
     ):
-        """注册单个路由"""
+        """Register a single tool route."""
         endpoint = config["endpoint"]
         params_class = config["params_class"]
         use_form = config["use_form"]
         tool_name = config["tool_name"]
 
-        # 创建端点函数
-        tool_endpoint_func = self._create_tool_endpoint(
+        # Create endpoint function
+        verify_api_key = verify_api_key_dependency(self.authenticate)
+        tool_endpoint_func = create_tool_endpoint(
             params_class,
             use_form,
             tool_name,
             tool_instance,
-        )
-
-        # 注册路由
-        response_model = tool_instance.get_response_model()
-        self.app.post(endpoint, response_model=response_model)(tool_endpoint_func)
-        logger.info(f"Registered route {endpoint} for tool {modname}")
-
-    def _create_tool_endpoint(
-        self,
-        p_class,
-        use_form_flag: bool,
-        tool_name_default: str,
-        tool_instance: BaseMCPTool,
-    ):
-        """创建工具端点函数"""
-
-        async def verify_api_key(
-            x_api_key: str | None = Header(None, alias="X-API-Key"),
-        ):
-            """Dependency to verify API key."""
-            if not self.authenticate(x_api_key or ""):
-                raise HTTPException(status_code=401, detail="Invalid API key")
-            return x_api_key
-
-        if use_form_flag:
-            # For form data, create a dynamic function with proper Form parameters
-            return self._create_form_endpoint(
-                p_class,
-                tool_name_default,
-                tool_instance,
-                verify_api_key,
-            )
-        # For JSON data, create a simpler function
-        return self._create_json_endpoint(
-            p_class,
-            tool_name_default,
-            tool_instance,
             verify_api_key,
         )
 
-    def _create_form_endpoint(
-        self,
-        p_class,
-        tool_name_default: str,
-        tool_instance: BaseMCPTool,
-        verify_api_key,
-    ):
-        """创建表单数据端点"""
-        # Get the fields from the params class
-        fields = p_class.model_fields
-
-        # Create parameter list for function signature
-        params = []
-
-        for field_name, field_info in fields.items():
-            # Check if the field is UploadFile
-            if field_info.annotation == UploadFile or (
-                hasattr(field_info.annotation, "__origin__")
-                and field_info.annotation.__origin__ == UploadFile
-            ):
-                form_func = File
-            else:
-                form_func = Form
-
-            # Get the field type annotation
-            field_annotation = field_info.annotation
-
-            if field_info.is_required():
-                params.append(
-                    inspect.Parameter(
-                        field_name,
-                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                        default=form_func(
-                            ...,
-                            description=field_info.description or "",
-                        ),
-                        annotation=field_annotation,
-                    ),
-                )
-            else:
-                params.append(
-                    inspect.Parameter(
-                        field_name,
-                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                        default=form_func(
-                            field_info.default,
-                            description=field_info.description or "",
-                        ),
-                        annotation=field_annotation,
-                    ),
-                )
-
-        # Add API key parameter
-        params.append(
-            inspect.Parameter(
-                "_api_key",
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                default=Depends(verify_api_key),
-            ),
-        )
-
-        # Create the function signature
-        sig = inspect.Signature(params)
-
-        async def tool_endpoint(**kwargs):
-            # The function will receive form parameters directly
-            # Separate API key from form data
-            kwargs.pop("_api_key", None)
-            form_data = kwargs
-
-            # Validate form data with the params_class
-            try:
-                params_obj = p_class(**form_data)
-            except ValueError as e:
-                raise HTTPException(status_code=422, detail=str(e))
-
-            # Use the provided tool_name_default captured in closure
-            tool_name = tool_name_default
-            try:
-                result = await tool_instance.call_tool(
-                    tool_name,
-                    params_obj.model_dump(),
-                )
-                # Convert to BaseResponse format
-                content = [
-                    {"type": item.type, "text": item.text}
-                    for item in result
-                    if hasattr(item, "type") and hasattr(item, "text")
-                ]
-                return {"success": True, "data": {"content": content}, "error": None}
-            except Exception as e:
-                return {"success": False, "data": None, "error": str(e)}
-
-        # Set the signature on the function
-        tool_endpoint.__signature__ = sig
-
-        return tool_endpoint
-
-    def _create_json_endpoint(
-        self,
-        p_class,
-        tool_name_default: str,
-        tool_instance: BaseMCPTool,
-        verify_api_key,
-    ):
-        """创建JSON数据端点"""
-
-        async def tool_endpoint(
-            params,  # type: ignore
-            _api_key: str = Depends(verify_api_key),
-        ):
-            # params is already validated by FastAPI as the correct type
-            # Use the provided tool_name_default captured in closure
-            tool_name = tool_name_default
-            try:
-                result = await tool_instance.call_tool(
-                    tool_name,
-                    params.model_dump(),
-                )
-                # Convert to BaseResponse format
-                content = [
-                    {"type": item.type, "text": item.text}
-                    for item in result
-                    if hasattr(item, "type") and hasattr(item, "text")
-                ]
-                return {"success": True, "data": {"content": content}, "error": None}
-            except Exception as e:
-                return {"success": False, "data": None, "error": str(e)}
-
-        # Set the type annotation dynamically
-        tool_endpoint.__annotations__["params"] = p_class
-        return tool_endpoint
+        # Register route
+        response_model = tool_instance.get_response_model()
+        self.app.post(endpoint, response_model=response_model)(tool_endpoint_func)
+        logger.info(f"Registered route {endpoint} for tool {modname}")
 
     def authenticate(self, api_key: str) -> bool:
         """Authenticate using API key with enhanced security."""

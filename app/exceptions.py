@@ -2,7 +2,7 @@
 自定义异常类和异常处理工具
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -104,12 +104,12 @@ def handle_exception(
     # 记录异常信息
     logger.log(
         log_level,
-        f"Exception occurred: {error_info['message']}",
-        extra={
+        f"Exception occurred: {error_info['message']}" +
+        str({
             "error_code": error_info["error_code"],
             "details": error_info["details"],
             **context,
-        },
+        }),
     )
 
     return error_info
