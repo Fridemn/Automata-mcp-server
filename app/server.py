@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 from loguru import logger
 from pydantic import BaseModel
@@ -113,6 +114,11 @@ class AutomataMCPServer:
             allow_methods=allowed_methods_list,
             allow_headers=allowed_headers_list,
         )
+
+        # Mount static files
+        static_dir = Path(__file__).parent.parent / "data" / "static"
+        static_dir.mkdir(exist_ok=True, parents=True)
+        self.app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
         # Add security headers middleware
         @self.app.middleware("http")
