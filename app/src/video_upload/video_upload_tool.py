@@ -84,7 +84,7 @@ class VideoUploadTool(BaseMCPTool):
         return {
             "filename": unique_filename,
             "original_filename": file.filename,
-            "url": f"/static/uploads/{unique_filename}",
+            "url": f"/static/upload_videos/{unique_filename}",
             "size": len(file_content),
         }
 
@@ -203,7 +203,7 @@ class VideoUploadTool(BaseMCPTool):
                                 "index": i,
                                 "filename": unique_filename,
                                 "original_filename": file.filename,
-                                "url": f"/static/uploads/{unique_filename}",
+                                "url": f"/static/upload_videos/{unique_filename}",
                                 "size": len(file_content),
                             },
                         )
@@ -288,7 +288,7 @@ class VideoUploadTool(BaseMCPTool):
                             videos.append(
                                 {
                                     "filename": file_path.name,
-                                    "url": f"/static/uploads/{file_path.name}",
+                                    "url": f"/static/upload_videos/{file_path.name}",
                                     "size": stat.st_size,
                                     "created": stat.st_ctime,
                                     "modified": stat.st_mtime,
@@ -373,6 +373,6 @@ def get_static_dir() -> Path:
 def get_uploads_dir() -> Path:
     """Get the uploads directory path"""
     static_dir = get_static_dir()
-    uploads_dir = static_dir / "uploads"
+    uploads_dir = static_dir / "upload_videos"
     uploads_dir.mkdir(exist_ok=True)
     return uploads_dir
