@@ -33,13 +33,7 @@ class ImageUploadTool(BaseMCPTool):
         self._setup_routes()
 
     def get_route_config(self) -> list[dict]:
-        return [
-            {
-                "endpoint": "/tools/image_upload",
-                "params_class": ImageUploadParams,
-                "use_form": True,
-            },
-        ]
+        return []
 
     async def _upload_single_image(self, file: UploadFile) -> dict:
         """Upload a single image file and return result info."""
@@ -340,10 +334,10 @@ class ImageUploadTool(BaseMCPTool):
             TextContent(
                 type="text",
                 text="Image upload functionality is available through REST API endpoints. Use the following endpoints:\n"
-                "- POST /api/upload/image - Upload single image\n"
-                "- POST /api/upload/images - Upload multiple images\n"
-                "- DELETE /api/upload/image/{filename} - Delete image\n"
-                "- GET /api/upload/images - List uploaded images",
+                "- POST /upload/image - Upload single image\n"
+                "- POST /upload/images - Upload multiple images\n"
+                "- DELETE /upload/image/{filename} - Delete image\n"
+                "- GET /upload/images - List uploaded images",
             ),
         ]
 

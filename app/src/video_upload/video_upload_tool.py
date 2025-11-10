@@ -33,13 +33,7 @@ class VideoUploadTool(BaseMCPTool):
         self._setup_routes()
 
     def get_route_config(self) -> list[dict]:
-        return [
-            {
-                "endpoint": "/tools/video_upload",
-                "params_class": VideoUploadParams,
-                "use_form": True,
-            },
-        ]
+        return []
 
     async def _upload_single_video(self, file: UploadFile) -> dict:
         """Upload a single video file and return result info."""
@@ -353,10 +347,10 @@ class VideoUploadTool(BaseMCPTool):
             TextContent(
                 type="text",
                 text="Video upload functionality is available through REST API endpoints. Use the following endpoints:\n"
-                "- POST /api/upload/video - Upload single video\n"
-                "- POST /api/upload/videos - Upload multiple videos\n"
-                "- DELETE /api/upload/video/{filename} - Delete video\n"
-                "- GET /api/upload/videos - List uploaded videos",
+                "- POST /upload/video - Upload single video\n"
+                "- POST /upload/videos - Upload multiple videos\n"
+                "- DELETE /upload/video/{filename} - Delete video\n"
+                "- GET /upload/videos - List uploaded videos",
             ),
         ]
 

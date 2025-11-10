@@ -10,7 +10,7 @@ from pathlib import Path
 import uvicorn
 import yaml
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -434,6 +434,16 @@ class AutomataMCPServer:
         route_configs = get_route_configs(tool_instance, modname)
         for config in route_configs:
             self._register_single_route(tool_instance, modname, config)
+
+        # Include the tool's router if it exists
+        if hasattr(tool_instance, "get_router"):
+            try:
+                router = tool_instance.get_router()
+                dependencies = [Depends(verify_api_key_dependency(self.authenticate))]
+                self.app.include_router(router, dependencies=dependencies)
+                logger.info(f"Included router for tool {modname}")
+            except Exception as e:
+                logger.error(f"Failed to include router for tool {modname}: {e}")
 
     def _register_single_route(
         self,
