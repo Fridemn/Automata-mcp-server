@@ -1,0 +1,4 @@
+enabled: true
+description: "视频上传工具，用于上传和管理视频文件"
+usage: "支持单个视频文件上传"
+packages: []
