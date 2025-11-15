@@ -1,0 +1,4 @@
+enabled: true
+description: "等待工具，用于在工作流中实现指定秒数的延迟"
+usage: "传入 seconds (等待秒数，0.1-3600秒之间)"
+packages: []
