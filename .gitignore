@@ -9,9 +9,7 @@ uv.lock
 poetry.lock
 
 openapi.json
-data/dist/
-data/t2i/*.png
-data/static/
+data/
 app/AutoUp-MCP-Extension
 
 ignore/
