@@ -2,20 +2,17 @@
 Image upload tool for Automata MCP Server
 """
 
-import os
-import shutil
 import uuid
 from pathlib import Path
-from typing import List, Sequence
+from typing import Sequence
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from mcp.types import EmbeddedResource, ImageContent, TextContent, Tool
 from pydantic import BaseModel
 
 from ...base_tool import BaseMCPTool
 from ...exceptions import handle_exception
-from ...routers import verify_api_key_dependency
 
 
 class ImageUploadParams(BaseModel):
