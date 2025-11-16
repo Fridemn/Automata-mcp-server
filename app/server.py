@@ -445,6 +445,17 @@ class AutomataMCPServer:
                     },
                 )
 
+            # 初始化配置（触发自动创建缺失的配置项）
+            try:
+                tool_instance.config_manager.get_extension_config(
+                    modname,
+                    auto_create=True,
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to initialize config for tool {modname}: {e}",
+                )
+
             # 注册工具
             self.tools[modname] = tool_instance
 

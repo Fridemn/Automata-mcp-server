@@ -3,12 +3,13 @@ from typing import Sequence
 
 from mcp.types import EmbeddedResource, ImageContent, TextContent, Tool
 
+from .extension_config import ExtensionConfigManager
 from .schemas import BaseResponse
 
 
 class BaseMCPTool(ABC):
     def __init__(self):
-        pass
+        self.config_manager = ExtensionConfigManager()
 
     def get_response_model(self) -> type[BaseResponse]:
         """Get the response model for this tool's endpoints.
