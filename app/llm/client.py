@@ -4,6 +4,8 @@ from openai import AsyncOpenAI
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
 
+from ..exceptions import ConfigurationError
+
 
 class LLMClient:
     """通用LLM客户端，支持OpenAI兼容的API"""
@@ -55,7 +57,12 @@ class LLMClient:
         """
         # 从环境变量获取默认值
         if model is None:
-            model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            model = os.getenv("OPENAI_MODEL")
+            if model is None:
+                raise ConfigurationError(
+                    "OPENAI_MODEL environment variable must be set",
+                    details={"required_var": "OPENAI_MODEL"},
+                )
         if base_url is None:
             base_url = os.getenv("OPENAI_BASE_URL") or None
 
