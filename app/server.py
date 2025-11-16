@@ -53,40 +53,36 @@ class AutomataMCPServer:
         # Load environment variables from .env file
         load_dotenv()
 
-        # Derive the OpenAPI `servers` entry from environment variables to avoid
-        # hard-coded addresses. Prefer an explicit SERVER_URL if provided,
-        # otherwise build from HOST and PORT with sensible defaults.
-        servers = [
-            {
-                "url": (
-                    os.getenv(
-                        "SERVER_URL",
-                        f"http://{os.getenv('HOST', 'localhost')}:{os.getenv('PORT', '8000')}",
-                    )
-                ),
-                "description": "Development server",
-            },
-        ]
-
+        # Don't set servers in FastAPI initialization - we'll handle it dynamically
+        # to support both local and external access
         self.app = FastAPI(
             title="Automata MCP Server",
             description="A centralized MCP server using FastAPI with plugin architecture",
             version="1.0.0",
-            servers=servers,
         )
 
-        self.api_key = os.getenv("AUTOMATA_API_KEY", "")
+        self.api_key = os.getenv("AUTOMATA_API_KEY") or ""
         self.host = os.getenv("HOST")
         self.port = os.getenv("PORT")
 
         self._validate_security_config()
 
         # Add CORS middleware
-        allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost")
+        allowed_origins = os.getenv("ALLOWED_ORIGINS")
+        if allowed_origins is None:
+            raise ConfigurationError(
+                "ALLOWED_ORIGINS environment variable must be set",
+                details={"required_var": "ALLOWED_ORIGINS"},
+            )
         allowed_origins_list = list(
             filter(lambda x: x, map(str.strip, allowed_origins.split(","))),
         )
-        allowed_methods = os.getenv("ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS")
+        allowed_methods = os.getenv("ALLOWED_METHODS")
+        if allowed_methods is None:
+            raise ConfigurationError(
+                "ALLOWED_METHODS environment variable must be set",
+                details={"required_var": "ALLOWED_METHODS"},
+            )
         allowed_methods_list = list(
             filter(lambda x: x, map(str.strip, allowed_methods.split(","))),
         )
@@ -119,6 +115,49 @@ class AutomataMCPServer:
         static_dir = Path(__file__).parent.parent / "data" / "static"
         static_dir.mkdir(exist_ok=True, parents=True)
         self.app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+        # Add middleware to dynamically update OpenAPI servers based on request
+        @self.app.middleware("http")
+        async def dynamic_openapi_servers(request: Request, call_next):
+            """Dynamically update OpenAPI servers based on request host."""
+            # Check if this is a request for OpenAPI schema
+            if request.url.path in ["/openapi.json", "/docs", "/redoc"]:
+                # Get the base URL from the request
+                scheme = request.url.scheme
+                host = request.headers.get("host")
+
+                # Check if SERVER_URL is explicitly set
+                server_url = os.getenv("SERVER_URL")
+                if server_url:
+                    base_url = server_url
+                else:
+                    # Use request host if available, otherwise build from environment
+                    if host:
+                        base_url = f"{scheme}://{host}"
+                    else:
+                        # No configuration available - raise error
+                        raise ConfigurationError(
+                            "No server URL configuration found. Set SERVER_URL environment variable or ensure HOST/PORT are configured.",
+                            details={
+                                "required_vars": ["SERVER_URL", "HOST", "PORT"],
+                                "current_values": {
+                                    "SERVER_URL": server_url,
+                                    "HOST": os.getenv("HOST"),
+                                    "PORT": os.getenv("PORT"),
+                                },
+                            },
+                        )
+
+                # Update the OpenAPI schema with the correct server URL
+                self.app.servers = [
+                    {
+                        "url": base_url,
+                        "description": "Current server",
+                    }
+                ]
+
+            response = await call_next(request)
+            return response
 
         # Add security headers middleware
         @self.app.middleware("http")
@@ -174,13 +213,15 @@ class AutomataMCPServer:
             )
 
         # 检查CORS配置
-        if "*" in os.getenv("ALLOWED_ORIGINS", "*"):
+        allowed_origins_check = os.getenv("ALLOWED_ORIGINS")
+        if allowed_origins_check and "*" in allowed_origins_check:
             logger.warning(
                 "SECURITY: CORS allows all origins. Consider restricting ALLOWED_ORIGINS.",
             )
 
         # 检查调试模式
-        if os.getenv("DEBUG", "false").lower() == "true":
+        debug_mode = os.getenv("DEBUG")
+        if debug_mode and debug_mode.lower() == "true":
             logger.warning(
                 "SECURITY: Debug mode is enabled. Sensitive information may be exposed in error responses.",
             )
@@ -404,6 +445,17 @@ class AutomataMCPServer:
                     },
                 )
 
+            # 初始化配置（触发自动创建缺失的配置项）
+            try:
+                tool_instance.config_manager.get_extension_config(
+                    modname,
+                    auto_create=True,
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to initialize config for tool {modname}: {e}",
+                )
+
             # 注册工具
             self.tools[modname] = tool_instance
 
@@ -601,7 +653,8 @@ def create_app() -> FastAPI:
         }
 
         # 在开发模式下包含更多信息
-        if os.getenv("DEBUG", "false").lower() == "true":
+        debug_mode = os.getenv("DEBUG")
+        if debug_mode and debug_mode.lower() == "true":
             safe_error["details"] = error_info.get("details", {})
 
         return JSONResponse(
@@ -612,10 +665,6 @@ def create_app() -> FastAPI:
     return app
 
 
-# 创建全局 app 实例供 uvicorn 热重载使用
-app = create_app()
-
-
 def main():
     """Main entry point for the Automata MCP Server."""
 
@@ -624,13 +673,15 @@ def main():
     host = os.getenv("HOST")
     port = int(os.getenv("PORT"))
 
+    # 使用工厂函数而不是全局实例，避免在 reloader 进程中初始化
     # 启用热重载功能，当代码文件发生变化时自动重启服务器
     uvicorn.run(
-        "app.server:app",
+        "app.server:create_app",
+        factory=True,  # 使用工厂模式
         host=host,
         port=port,
         reload=True,
-        reload_includes=["**/*.py"],  # 监听所有 Python 文件的变化
+        reload_dirs=["app"],  # 只监听 app 目录的变化，避免监听虚拟环境
     )
 
 
