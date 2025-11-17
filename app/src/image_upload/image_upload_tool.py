@@ -195,6 +195,9 @@ class ImageUploadTool(BaseMCPTool):
                             },
                         )
 
+                # 生成所有图片URL的分号分隔字符串
+                all_pic = ";".join([result["url"] for result in results])
+
                 return JSONResponse(
                     content={
                         "success": len(results) > 0,
@@ -202,6 +205,7 @@ class ImageUploadTool(BaseMCPTool):
                         "errors": errors,
                         "total_uploaded": len(results),
                         "total_errors": len(errors),
+                        "all_pic": all_pic,
                         "message": f"Uploaded {len(results)} files successfully",
                     },
                     status_code=200,
