@@ -3,6 +3,7 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from loguru import logger
+from mcp.types import Tool
 
 from .base_tool import BaseMCPTool
 
@@ -27,10 +28,10 @@ def verify_api_key_dependency(
 
 
 def create_router(
-        authenticate_func: Callable[[str], bool],
-        tools_count_func: Callable[[], int],
-        tools_dict: dict[str, BaseMCPTool]
-    ) -> APIRouter:
+    authenticate_func: Callable[[str], bool],
+    tools_count_func: Callable[[], int],
+    tools_dict: dict[str, BaseMCPTool],
+) -> APIRouter:
     """
     Creates the main API router with health checks and tool management endpoints.
     Returns a configured APIRouter instance.
@@ -53,19 +54,15 @@ def create_router(
         return {"status": "healthy"}
 
     @router.get("/tools")
-    async def list_registered_tools(_api_key: str = Depends(verify_api_key)) -> dict[str, list[dict[str, str]]]:
+    async def list_registered_tools(
+        _api_key: str = Depends(verify_api_key),
+    ) -> dict[str, list[Tool]]:
         """List all registered tools (for debugging)."""
         tools_info = []
         for modname, tool_instance in tools_dict.items():
             try:
                 tool_list = await tool_instance.list_tools()
-                for tool in tool_list:
-                    tools_info.append(
-                        {
-                            "name": tool.name,
-                            "description": tool.description,
-                        }
-                    )
+                tools_info.extend(tool_list)
             except Exception:  # noqa: BLE001
                 # Log error if needed, but for now skip
                 pass
