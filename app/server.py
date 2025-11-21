@@ -2,6 +2,7 @@
 import hmac
 import importlib
 import inspect
+import logging
 import os
 import subprocess
 import sys
@@ -10,9 +11,9 @@ from pathlib import Path
 import uvicorn
 import yaml
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 from loguru import logger
@@ -33,6 +34,7 @@ from .routers import (
     get_route_configs,
     verify_api_key_dependency,
 )
+from .log_viewer import LogViewerManager, get_log_viewer_html
 
 
 class MCPRequest(BaseModel):
@@ -193,6 +195,11 @@ class AutomataMCPServer:
         self.tools_dirs = [self.tools_dir]
         if self.extension_dir.exists() and self.extension_dir.is_dir():
             self.tools_dirs.append(self.extension_dir)
+
+        # 初始化日志查看器
+        self.log_viewer = LogViewerManager()
+        self._setup_log_viewer_routes()
+
         self.install_dependencies_for_enabled_tools()
         self.discover_tools()
         # Initialize FastApiMCP
@@ -225,6 +232,27 @@ class AutomataMCPServer:
             logger.warning(
                 "SECURITY: Debug mode is enabled. Sensitive information may be exposed in error responses.",
             )
+
+    def _setup_log_viewer_routes(self):
+        """设置日志查看器路由"""
+
+        @self.app.get("/api/logs", response_class=HTMLResponse)
+        async def log_viewer_page():
+            """日志查看器页面"""
+            return get_log_viewer_html()
+
+        @self.app.websocket("/api/logs/ws")
+        async def log_viewer_websocket(websocket: WebSocket):
+            """日志查看器 WebSocket 连接"""
+            await self.log_viewer.connect(websocket)
+            try:
+                while True:
+                    # 保持连接活跃
+                    await websocket.receive_text()
+            except WebSocketDisconnect:
+                self.log_viewer.disconnect(websocket)
+
+        logger.info("Log viewer routes configured at /api/logs")
 
     @with_exception_handling("dependency_installation")
     def install_dependencies_for_enabled_tools(self):
@@ -620,6 +648,57 @@ def create_app() -> FastAPI:
     """Create and return the FastAPI application."""
     server = AutomataMCPServer()
     app = server.app
+
+    # 配置标准logging模块,将日志桥接到loguru
+    class InterceptHandler(logging.Handler):
+        """拦截标准logging日志并转发到loguru"""
+
+        def emit(self, record):
+            # 获取对应的loguru级别
+            try:
+                level = logger.level(record.levelname).name
+            except ValueError:
+                level = record.levelno
+
+            # 查找调用者信息
+            frame, depth = logging.currentframe(), 2
+            while frame.f_code.co_filename == logging.__file__:
+                frame = frame.f_back
+                depth += 1
+
+            logger.opt(depth=depth, exception=record.exc_info).log(
+                level, record.getMessage()
+            )
+
+    # 拦截uvicorn和其他库的日志
+    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+    for logger_name in ["uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"]:
+        logging_logger = logging.getLogger(logger_name)
+        logging_logger.handlers = [InterceptHandler()]
+        logging_logger.propagate = False
+
+    # 添加日志处理器,将日志发送到WebSocket客户端
+    def log_sink(message):
+        """自定义日志接收器,将日志发送到日志查看器"""
+        record = message.record
+        log_entry = {
+            "timestamp": record["time"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+            "level": record["level"].name,
+            "message": record["message"],
+        }
+        # 异步广播日志
+        import asyncio
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(server.log_viewer.broadcast_log(log_entry))
+        except RuntimeError:
+            # 如果事件循环未运行,直接保存到历史
+            server.log_viewer.log_history.append(log_entry)
+
+    # 注册自定义日志处理器
+    logger.add(log_sink, format="{message}")
 
     # 添加全局异常处理器
     @app.exception_handler(AutomataError)
