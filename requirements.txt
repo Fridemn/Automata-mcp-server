@@ -1,7 +1,7 @@
 # Auto-generated from pyproject.toml
 # DO NOT EDIT MANUALLY - Run scripts/sync_deps.py instead
 
-edge-tts>=7.2.3,<8.0.0
+edge-tts==7.0.0
 fastapi-mcp
 fastapi==0.119.1
 loguru>=0.7.0
