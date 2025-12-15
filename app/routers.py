@@ -1,30 +1,34 @@
 import inspect
 from typing import Any, Callable
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from loguru import logger
 from mcp.types import Tool
 
 from .base_tool import BaseMCPTool
 
 
-def verify_api_key_dependency(
+def verify_access_token_dependency(
     authenticate_func: Callable[[str], bool],
 ) -> Callable:
     """
-    Factory function to create a verify_api_key dependency with authentication function.
-    Returns an async dependency function that verifies API key.
+    Factory function to create a verify_access_token dependency with authentication function.
+    Returns an async dependency function that verifies Access Token.
     """
+    security = HTTPBearer()
 
-    async def verify_api_key(
-        x_api_key: str | None = Header(None, alias="X-API-Key"),
+    async def verify_access_token(
+        auth: HTTPAuthorizationCredentials = Depends(security),
     ) -> str:
-        """Dependency to verify API key."""
-        if not authenticate_func(x_api_key or ""):
-            raise HTTPException(status_code=401, detail="Invalid API key")
-        return x_api_key or ""
+        """Dependency to verify Access Token."""
+        token = auth.credentials
 
-    return verify_api_key
+        if not authenticate_func(token):
+            raise HTTPException(status_code=401, detail="Invalid Access Token")
+        return token
+
+    return verify_access_token
 
 
 def create_router(
@@ -37,7 +41,7 @@ def create_router(
     Returns a configured APIRouter instance.
     """
     router = APIRouter()
-    verify_api_key = verify_api_key_dependency(authenticate_func)
+    verify_access_token = verify_access_token_dependency(authenticate_func)
 
     @router.get("/")
     async def root() -> dict[str, Any]:
@@ -55,7 +59,7 @@ def create_router(
 
     @router.get("/tools")
     async def list_registered_tools(
-        _api_key: str = Depends(verify_api_key),
+        _token: str = Depends(verify_access_token),
     ) -> dict[str, list[Tool]]:
         """List all registered tools (for debugging)."""
         tools_info = []
@@ -120,7 +124,7 @@ def create_form_endpoint(
     params_class: type,
     tool_name: str,
     tool_instance: BaseMCPTool,
-    verify_api_key: Callable,
+    verify_access_token: Callable,
 ) -> Callable:
     """
     Creates a form data endpoint handler for a tool.
@@ -170,12 +174,12 @@ def create_form_endpoint(
                 ),
             )
 
-    # Add API key parameter
+    # Add Access Token parameter
     params.append(
         inspect.Parameter(
-            "_api_key",
+            "_token",
             inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            default=Depends(verify_api_key),
+            default=Depends(verify_access_token),
         ),
     )
 
@@ -184,8 +188,8 @@ def create_form_endpoint(
 
     async def tool_endpoint(**kwargs: Any) -> dict[str, Any]:
         """Execute tool with form parameters."""
-        # Separate API key from form data
-        kwargs.pop("_api_key", None)
+        # Separate Access Token from form data
+        kwargs.pop("_token", None)
         form_data = kwargs
 
         # Validate form data with the params_class
@@ -219,7 +223,7 @@ def create_json_endpoint(
     params_class: type,
     tool_name: str,
     tool_instance: BaseMCPTool,
-    verify_api_key: Callable,
+    verify_access_token: Callable,
 ) -> Callable:
     """
     Creates a JSON data endpoint handler for a tool.
@@ -228,7 +232,7 @@ def create_json_endpoint(
 
     async def tool_endpoint(
         params: params_class,  # type: ignore
-        _api_key: str = Depends(verify_api_key),
+        _token: str = Depends(verify_access_token),
     ) -> dict[str, Any]:
         """Execute tool with JSON parameters."""
         try:
@@ -256,7 +260,7 @@ def create_tool_endpoint(
     use_form: bool,
     tool_name: str,
     tool_instance: BaseMCPTool,
-    verify_api_key: Callable,
+    verify_access_token: Callable,
 ) -> Callable:
     """
     Creates a tool endpoint (form or JSON based on use_form flag).
@@ -267,11 +271,11 @@ def create_tool_endpoint(
             params_class,
             tool_name,
             tool_instance,
-            verify_api_key,
+            verify_access_token,
         )
     return create_json_endpoint(
         params_class,
         tool_name,
         tool_instance,
-        verify_api_key,
+        verify_access_token,
     )
