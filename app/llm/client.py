@@ -1,5 +1,6 @@
 import os
 from typing import List, Dict, Optional
+import httpx
 from openai import AsyncOpenAI
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INTERNAL_ERROR
@@ -28,6 +29,10 @@ class LLMClient:
             client_kwargs = {"api_key": api_key}
             if base_url:
                 client_kwargs["base_url"] = base_url
+
+            # Create httpx client without proxies to avoid compatibility issues
+            http_client = httpx.AsyncClient()
+            client_kwargs["http_client"] = http_client
 
             self.client = AsyncOpenAI(**client_kwargs)
 
