@@ -215,6 +215,7 @@ def create_form_endpoint(
 
     # Set the signature on the function
     tool_endpoint.__signature__ = sig
+    tool_endpoint.__name__ = tool_name
 
     return tool_endpoint
 
@@ -251,6 +252,7 @@ def create_json_endpoint(
             return {"success": False, "data": None, "error": str(e)}
 
     # Set the type annotation dynamically
+    tool_endpoint.__name__ = tool_name
     tool_endpoint.__annotations__["params"] = params_class
     return tool_endpoint
 

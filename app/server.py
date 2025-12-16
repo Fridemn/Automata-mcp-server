@@ -602,9 +602,20 @@ class AutomataMCPServer:
             verify_access_token,
         )
 
+        # Generate operation_id from endpoint to ensure uniqueness
+        # Remove leading slash and 'tools/' prefix if present
+        op_id_base = endpoint.lstrip("/")
+        if op_id_base.startswith("tools/"):
+            op_id_base = op_id_base[6:]
+        operation_id = op_id_base.replace("/", "_")
+
         # Register route
         response_model = tool_instance.get_response_model()
-        self.app.post(endpoint, response_model=response_model)(tool_endpoint_func)
+        self.app.post(
+            endpoint, response_model=response_model, operation_id=operation_id
+        )(
+            tool_endpoint_func,
+        )
         logger.info(f"Registered route {endpoint} for tool {modname}")
 
     def _build_module_path(self, tools_dir: Path, modname: str) -> str:
