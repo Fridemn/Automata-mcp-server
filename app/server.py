@@ -32,7 +32,7 @@ from .routers import (
     create_router,
     create_tool_endpoint,
     get_route_configs,
-    verify_api_key_dependency,
+    verify_access_token_dependency,
 )
 from .log_viewer import LogViewerManager, get_log_viewer_html
 
@@ -63,7 +63,7 @@ class AutomataMCPServer:
             version="1.0.0",
         )
 
-        self.api_key = os.getenv("AUTOMATA_API_KEY") or ""
+        self.access_token = os.getenv("AUTOMATA_ACCESS_TOKEN") or ""
         self.host = os.getenv("HOST")
         self.port = os.getenv("PORT")
 
@@ -90,7 +90,7 @@ class AutomataMCPServer:
         )
         allowed_headers = os.getenv(
             "ALLOWED_HEADERS",
-            "X-API-Key,Content-Type,Authorization",
+            "Content-Type,Authorization",
         )
         allowed_headers_list = list(
             filter(lambda x: x, map(str.strip, allowed_headers.split(","))),
@@ -182,6 +182,59 @@ class AutomataMCPServer:
 
             return response
 
+        # Add authentication middleware
+        @self.app.middleware("http")
+        async def authenticate_requests(request: Request, call_next):
+            """Authenticate all requests and inject Access Token into headers."""
+            # Skip authentication for public endpoints
+            public_paths = [
+                "/docs",
+                "/redoc",
+                "/openapi.json",
+                "/health",
+                "/static",
+                "/favicon.ico",
+            ]
+            if request.url.path == "/" or any(
+                request.url.path.startswith(p) for p in public_paths
+            ):
+                return await call_next(request)
+
+            # Allow OPTIONS requests (CORS)
+            if request.method == "OPTIONS":
+                return await call_next(request)
+
+            # Extract token from Authorization header
+            auth_header = request.headers.get("Authorization")
+            token = ""
+            if auth_header:
+                if auth_header.startswith("Bearer "):
+                    token = auth_header.split(" ")[1]
+                else:
+                    token = auth_header
+
+            # Validate token
+            if not self.authenticate(token):
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid Access Token"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            # Inject Access Token into headers (as X-API-Key for compatibility)
+            # This ensures tools in AutoUp-MCP-Extension that might expect X-API-Key still work
+            # and that the token is available in the request headers as requested.
+            headers = dict(request.headers)
+            headers["x-api-key"] = token
+
+            # Rebuild scope headers
+            request.scope["headers"] = [
+                (k.lower().encode("latin-1"), v.encode("latin-1"))
+                for k, v in headers.items()
+            ]
+
+            return await call_next(request)
+
         self.tools = {}
         # 配置工具目录路径，支持绝对路径和相对路径
         tools_dir_env = os.getenv("TOOLS_DIR")
@@ -213,10 +266,10 @@ class AutomataMCPServer:
 
     def _validate_security_config(self):
         """验证安全配置"""
-        # 检查API key配置
-        if not self.api_key:
+        # 检查Access Token配置
+        if not self.access_token:
             logger.warning(
-                "SECURITY: No API key configured. Consider setting AUTOMATA_API_KEY environment variable.",
+                "SECURITY: No Access Token configured. Consider setting AUTOMATA_ACCESS_TOKEN environment variable.",
             )
 
         # 检查CORS配置
@@ -519,7 +572,9 @@ class AutomataMCPServer:
         if hasattr(tool_instance, "get_router"):
             try:
                 router = tool_instance.get_router()
-                dependencies = [Depends(verify_api_key_dependency(self.authenticate))]
+                dependencies = [
+                    Depends(verify_access_token_dependency(self.authenticate))
+                ]
                 self.app.include_router(router, dependencies=dependencies)
                 logger.info(f"Included router for tool {modname}")
             except Exception as e:
@@ -538,13 +593,13 @@ class AutomataMCPServer:
         tool_name = config["tool_name"]
 
         # Create endpoint function
-        verify_api_key = verify_api_key_dependency(self.authenticate)
+        verify_access_token = verify_access_token_dependency(self.authenticate)
         tool_endpoint_func = create_tool_endpoint(
             params_class,
             use_form,
             tool_name,
             tool_instance,
-            verify_api_key,
+            verify_access_token,
         )
 
         # Register route
@@ -622,26 +677,28 @@ class AutomataMCPServer:
                 },
             )
 
-    def authenticate(self, api_key: str) -> bool:
-        """Authenticate using API key with enhanced security."""
-        # If no API key is configured, allow access (development mode)
-        if not self.api_key:
-            logger.warning("No API key configured - allowing unauthenticated access")
+    def authenticate(self, token: str) -> bool:
+        """Authenticate using Access Token with enhanced security."""
+        # If no Access Token is configured, allow access (development mode)
+        if not self.access_token:
+            logger.warning(
+                "No Access Token configured - allowing unauthenticated access"
+            )
             return True
 
-        # Validate API key format (basic security check)
-        if not api_key or not isinstance(api_key, str):
-            logger.warning("Invalid API key format")
+        # Validate token format (basic security check)
+        if not token or not isinstance(token, str):
+            logger.warning("Invalid Access Token format")
             return False
 
-        # Check API key length (prevent timing attacks with very short keys)
-        if len(api_key.strip()) < 8:
-            logger.warning("API key too short")
+        # Check token length (prevent timing attacks with very short keys)
+        if len(token.strip()) < 8:
+            logger.warning("Access Token too short")
             return False
 
         # Use constant-time comparison to prevent timing attacks
 
-        return hmac.compare_digest(api_key.strip(), self.api_key.strip())
+        return hmac.compare_digest(token.strip(), self.access_token.strip())
 
 
 def create_app() -> FastAPI:
