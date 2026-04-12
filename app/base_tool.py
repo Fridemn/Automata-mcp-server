@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Sequence
 
+from loguru import logger
 from mcp.types import EmbeddedResource, ImageContent, TextContent, Tool
 
 from .extension_config import ExtensionConfigManager
@@ -10,6 +11,8 @@ from .schemas import BaseResponse
 class BaseMCPTool(ABC):
     def __init__(self):
         self.config_manager = ExtensionConfigManager()
+        class_name = self.__class__.__name__
+        self.logger = logger.bind(tool=class_name)
 
     def get_response_model(self) -> type[BaseResponse]:
         """Get the response model for this tool's endpoints.
