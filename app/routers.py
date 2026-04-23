@@ -204,11 +204,19 @@ def create_form_endpoint(
                 params_obj.model_dump(),
             )
             # Convert to BaseResponse format
-            content = [
-                {"type": item.type, "text": item.text}
-                for item in result
-                if hasattr(item, "type") and hasattr(item, "text")
-            ]
+            content = []
+            for item in result:
+                if hasattr(item, "type"):
+                    if item.type == "text" and hasattr(item, "text"):
+                        content.append({"type": item.type, "text": item.text})
+                    elif item.type == "image" and hasattr(item, "data"):
+                        content.append(
+                            {
+                                "type": item.type,
+                                "data": item.data,
+                                "mimeType": getattr(item, "mimeType", "image/png"),
+                            }
+                        )
             return {"success": True, "data": {"content": content}, "error": None}
         except Exception as e:
             return {"success": False, "data": None, "error": str(e)}
@@ -242,11 +250,19 @@ def create_json_endpoint(
                 params.model_dump(),
             )
             # Convert to BaseResponse format
-            content = [
-                {"type": item.type, "text": item.text}
-                for item in result
-                if hasattr(item, "type") and hasattr(item, "text")
-            ]
+            content = []
+            for item in result:
+                if hasattr(item, "type"):
+                    if item.type == "text" and hasattr(item, "text"):
+                        content.append({"type": item.type, "text": item.text})
+                    elif item.type == "image" and hasattr(item, "data"):
+                        content.append(
+                            {
+                                "type": item.type,
+                                "data": item.data,
+                                "mimeType": getattr(item, "mimeType", "image/png"),
+                            }
+                        )
             return {"success": True, "data": {"content": content}, "error": None}
         except Exception as e:
             return {"success": False, "data": None, "error": str(e)}
