@@ -12,38 +12,43 @@ class LLMClient:
     """通用LLM客户端，支持OpenAI兼容的API"""
 
     def __init__(self):
-        self.client: Optional[AsyncOpenAI] = None
+        self._api_key: Optional[str] = None
+        self._base_url: Optional[str] = None
 
-    async def _get_client(self, base_url: Optional[str] = None) -> AsyncOpenAI:
-        """获取或创建OpenAI客户端"""
-        if self.client is None:
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
+    async def _create_client(self, base_url: Optional[str] = None) -> AsyncOpenAI:
+        """创建新的OpenAI客户端（每次请求创建新实例避免连接复用问题）"""
+        if self._api_key is None:
+            self._api_key = os.getenv("OPENAI_API_KEY")
+            if not self._api_key:
                 raise McpError(
                     ErrorData(
                         code=INTERNAL_ERROR,
                         message="OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.",
                     )
                 )
+            self._base_url = os.getenv("OPENAI_BASE_URL") or None
 
-            client_kwargs = {"api_key": api_key}
-            if base_url:
-                client_kwargs["base_url"] = base_url
+        client_kwargs = {"api_key": self._api_key}
+        effective_base_url = base_url or self._base_url
+        if effective_base_url:
+            client_kwargs["base_url"] = effective_base_url
 
-            # Create httpx client without proxies to avoid compatibility issues
-            http_client = httpx.AsyncClient()
-            client_kwargs["http_client"] = http_client
+        # Create new httpx client for each request to avoid BrokenResourceError
+        # from connection reuse issues with some API providers
+        http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(120.0),
+            limits=httpx.Limits(max_connections=1, max_keepalive_connections=0),
+        )
+        client_kwargs["http_client"] = http_client
 
-            self.client = AsyncOpenAI(**client_kwargs)
-
-        return self.client
+        return AsyncOpenAI(**client_kwargs)
 
     async def generate(
         self,
         messages: List[Dict[str, str]],
         model: Optional[str] = None,
         base_url: Optional[str] = None,
-        max_tokens: int = 2000,
+        max_tokens: int = 6000,
         temperature: float = 0.7,
         **kwargs,
     ) -> str:
@@ -68,11 +73,9 @@ class LLMClient:
                     "OPENAI_MODEL environment variable must be set",
                     details={"required_var": "OPENAI_MODEL"},
                 )
-        if base_url is None:
-            base_url = os.getenv("OPENAI_BASE_URL") or None
 
+        client = await self._create_client(base_url)
         try:
-            client = await self._get_client(base_url)
             response = await client.chat.completions.create(
                 model=model,
                 messages=messages,
@@ -87,3 +90,5 @@ class LLMClient:
                     code=INTERNAL_ERROR, message=f"Failed to generate text: {str(e)}"
                 )
             )
+        finally:
+            await client.close()
