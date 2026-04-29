@@ -30,6 +30,7 @@ from .exceptions import (
 )
 from .routers import (
     create_router,
+    create_execution_endpoint,
     create_tool_endpoint,
     get_route_configs,
     verify_access_token_dependency,
@@ -591,6 +592,8 @@ class AutomataMCPServer:
         params_class = config["params_class"]
         use_form = config["use_form"]
         tool_name = config["tool_name"]
+        requires_session = config["requires_session"]
+        enable_execution = config["enable_execution"]
 
         # Create endpoint function
         verify_access_token = verify_access_token_dependency(self.authenticate)
@@ -617,6 +620,25 @@ class AutomataMCPServer:
             tool_endpoint_func,
         )
         logger.info(f"Registered route {endpoint} for tool {modname}")
+
+        if enable_execution:
+            execution_endpoint = f"{endpoint.rstrip('/')}/execute"
+            execution_operation_id = f"{operation_id}_execute"
+            execution_endpoint_func = create_execution_endpoint(
+                params_class,
+                tool_name,
+                tool_instance,
+                verify_access_token,
+                requires_session=requires_session,
+            )
+            self.app.post(
+                execution_endpoint,
+                response_model=response_model,
+                operation_id=execution_operation_id,
+            )(execution_endpoint_func)
+            logger.info(
+                f"Registered execution route {execution_endpoint} for tool {modname}",
+            )
 
     def _build_module_path(self, tools_dir: Path, modname: str) -> str:
         """构建模块路径"""

@@ -4,6 +4,7 @@ from typing import Sequence
 from loguru import logger
 from mcp.types import EmbeddedResource, ImageContent, TextContent, Tool
 
+from .execution_context import ExecutionContext, get_execution_context
 from .extension_config import ExtensionConfigManager
 from .schemas import BaseResponse
 
@@ -19,6 +20,10 @@ class BaseMCPTool(ABC):
         Can be overridden by subclasses to provide custom response models.
         """
         return BaseResponse
+
+    def get_execution_context(self) -> ExecutionContext | None:
+        """Return the request-scoped execution context if available."""
+        return get_execution_context()
 
     @abstractmethod
     async def list_tools(self) -> list[Tool]:

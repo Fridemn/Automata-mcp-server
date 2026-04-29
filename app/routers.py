@@ -7,6 +7,12 @@ from loguru import logger
 from mcp.types import Tool
 
 from .base_tool import BaseMCPTool
+from .execution_context import (
+    ExecutionContext,
+    reset_execution_context,
+    set_execution_context,
+)
+from .schemas import ToolExecutionRequest
 
 
 def verify_access_token_dependency(
@@ -114,6 +120,13 @@ def get_route_configs(
             "params_class": route_config["params_class"],
             "use_form": route_config.get("use_form", False),
             "tool_name": route_config.get("tool_name", modname),
+            "requires_session": route_config.get("requires_session", False),
+            "platform": route_config.get("platform"),
+            "action": route_config.get("action"),
+            "enable_execution": route_config.get(
+                "enable_execution",
+                not route_config.get("use_form", False),
+            ),
         }
         validated_configs.append(normalized_config)
 
@@ -271,6 +284,107 @@ def create_json_endpoint(
     tool_endpoint.__name__ = tool_name
     tool_endpoint.__annotations__["params"] = params_class
     return tool_endpoint
+
+
+def _format_tool_result(result: Any) -> dict[str, Any]:
+    """Convert MCP content items into the standard HTTP response shape."""
+    content = []
+    for item in result:
+        if hasattr(item, "type"):
+            if item.type == "text" and hasattr(item, "text"):
+                content.append({"type": item.type, "text": item.text})
+            elif item.type == "image" and hasattr(item, "data"):
+                content.append(
+                    {
+                        "type": item.type,
+                        "data": item.data,
+                        "mimeType": getattr(item, "mimeType", "image/png"),
+                    }
+                )
+    return {"success": True, "data": {"content": content}, "error": None}
+
+
+def _build_execution_context(request: ToolExecutionRequest) -> ExecutionContext:
+    session = request.session
+    return ExecutionContext(
+        task_id=request.task.task_id,
+        user_id=request.task.user_id,
+        account_id=request.task.account_id,
+        platform=request.task.platform,
+        action=request.task.action,
+        session_id=session.session_id if session else None,
+        cdp_url=session.cdp_url if session else None,
+        timeout=request.options.timeout,
+        retry=request.options.retry,
+    )
+
+
+def _validate_execution_session(
+    request: ToolExecutionRequest,
+    tool_name: str,
+    requires_session: bool,
+) -> None:
+    """Validate execution envelope structure for session-aware tools."""
+    if not requires_session:
+        return
+
+    if request.session is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tool {tool_name} requires session data",
+        )
+
+    if not request.session.session_id.strip():
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tool {tool_name} requires a non-empty session_id",
+        )
+
+    if not request.session.cdp_url.strip():
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tool {tool_name} requires a non-empty cdp_url",
+        )
+
+
+def create_execution_endpoint(
+    params_class: type,
+    tool_name: str,
+    tool_instance: BaseMCPTool,
+    verify_access_token: Callable,
+    requires_session: bool = False,
+) -> Callable:
+    """
+    Creates an execution-envelope endpoint handler for a tool.
+    Returns an async endpoint function.
+    """
+
+    async def tool_execution_endpoint(
+        request: ToolExecutionRequest,
+        _token: str = Depends(verify_access_token),
+    ) -> dict[str, Any]:
+        """Execute tool with a standard task/session/payload envelope."""
+        try:
+            params_obj = params_class(**request.payload)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        _validate_execution_session(request, tool_name, requires_session)
+        token = set_execution_context(_build_execution_context(request))
+
+        try:
+            result = await tool_instance.call_tool(
+                tool_name,
+                params_obj.model_dump(),
+            )
+            return _format_tool_result(result)
+        except Exception as e:
+            return {"success": False, "data": None, "error": str(e)}
+        finally:
+            reset_execution_context(token)
+
+    tool_execution_endpoint.__name__ = f"{tool_name}_execute"
+    return tool_execution_endpoint
 
 
 def create_tool_endpoint(
